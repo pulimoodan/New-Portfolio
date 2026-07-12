@@ -1,0 +1,841 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<title>PRESSURE — hold to inflate, release to bank</title>
+<style>
+  :root { color-scheme: light; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    height: 100%; overflow: hidden;
+    background: #eef0f3;
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    -webkit-user-select: none; user-select: none;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: none;
+  }
+  #wrap {
+    position: fixed; inset: 10px; bottom: 44px;
+    display: grid; place-items: center;
+    border: 1px solid #dcdee3; border-radius: 10px;
+    overflow: hidden;
+    background: #ffffff;
+  }
+  canvas { display: block; }
+  #band {
+    position: fixed; left: 10px; right: 10px; bottom: 0; height: 44px;
+    display: flex; align-items: center; justify-content: center; gap: 6px;
+    font-size: 10px; font-weight: 700; letter-spacing: 2px;
+    color: rgba(24,26,33,0.4);
+    touch-action: auto;
+  }
+  #band a { color: rgba(24,26,33,0.85); text-decoration: underline; }
+</style>
+</head>
+<body>
+<div id="wrap"><canvas id="c"></canvas></div>
+<div id="band">BREWED CAREFULLY BY <a href="../../index.html">AKBAR ALI</a></div>
+<script>
+(() => {
+  'use strict';
+
+  // ---------- tuning ----------
+  const T = {
+    // Pressure units per second. Pure PACING: the pot and the meter both key off pressure,
+    // not time, so this changes how fast a balloon plays without touching the economy.
+    baseInflate: 32,
+    inflatePerLvl: 1.4,
+    // POP RISK runs 0% at zero pressure to 100% at capMax — so it starts moving the instant
+    // you hold, and never sits frozen. The balloon is INVULNERABLE below popLock: burst
+    // capacity is drawn uniformly from [popLock·capMax, capMax], so nothing can pop until
+    // the meter reads 40%. Everything below that line is guaranteed money.
+    popLock: 0.40,
+    capMax: 100,
+    capMaxPerLvl: -1.6,
+    capMaxFloor: 58,
+    // Only pressure ABOVE the lock scores: pot = (pressure - lock)^valueExp / valueDiv.
+    // This is what stops the safe zone from being farmable. If the guaranteed-safe pressure
+    // paid points, the dominant strategy would be to release exactly at the lock and never
+    // die — a risk-free reward repeated forever is unbounded, however small it is. Zeroing
+    // it turns the safe zone into a free run-up rather than free money: to score at all you
+    // have to walk into the part of the balloon that can kill you.
+    valueExp: 1.55,      // > 1, so each extra unit of pressure is worth more than the last
+    valueDiv: 1.2,
+    streakStep: 0.15,    // bank multiplier gain per consecutive bank
+  };
+
+  // ---------- canvas ----------
+  const cvs = document.getElementById('c');
+  const ctx = cvs.getContext('2d');
+  let W = 0, H = 0, DPR = 1;
+  function resize() {
+    DPR = Math.min(window.devicePixelRatio || 1, 2);
+    // The risk gradient is the background, so the canvas must fill the framed play area.
+    const wrap = document.getElementById('wrap');
+    W = wrap.clientWidth;
+    H = wrap.clientHeight;
+    cvs.width = W * DPR; cvs.height = H * DPR;
+    cvs.style.width = W + 'px'; cvs.style.height = H + 'px';
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  }
+  window.addEventListener('resize', resize);
+  resize();
+
+  // ---------- audio ----------
+  let AC = null;
+  function ac() {
+    if (!AC) AC = new (window.AudioContext || window.webkitAudioContext)();
+    if (AC.state === 'suspended') AC.resume();
+    return AC;
+  }
+  let inflateOsc = null, inflateGain = null;
+  function startInflateTone() {
+    const a = ac();
+    inflateOsc = a.createOscillator();
+    inflateGain = a.createGain();
+    inflateOsc.type = 'sawtooth';
+    inflateOsc.frequency.value = 90;
+    inflateGain.gain.value = 0.0001;
+    inflateGain.gain.linearRampToValueAtTime(0.035, a.currentTime + 0.05);
+    const f = a.createBiquadFilter();
+    f.type = 'lowpass'; f.frequency.value = 900;
+    inflateOsc.connect(f); f.connect(inflateGain); inflateGain.connect(a.destination);
+    inflateOsc.start();
+  }
+  function updateInflateTone(p) {
+    if (!inflateOsc) return;
+    inflateOsc.frequency.setTargetAtTime(90 + p * 5.5, AC.currentTime, 0.03);
+  }
+  function stopInflateTone() {
+    if (!inflateOsc) return;
+    const a = ac(), o = inflateOsc, g = inflateGain;
+    g.gain.cancelScheduledValues(a.currentTime);
+    g.gain.setTargetAtTime(0.0001, a.currentTime, 0.02);
+    o.stop(a.currentTime + 0.12);
+    inflateOsc = null; inflateGain = null;
+  }
+  function noiseBurst(dur, vol, hz) {
+    const a = ac();
+    const buf = a.createBuffer(1, a.sampleRate * dur, a.sampleRate);
+    const d = buf.getChannelData(0);
+    for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / d.length);
+    const src = a.createBufferSource(); src.buffer = buf;
+    const f = a.createBiquadFilter(); f.type = 'bandpass'; f.frequency.value = hz; f.Q.value = 0.7;
+    const g = a.createGain(); g.gain.value = vol;
+    src.connect(f); f.connect(g); g.connect(a.destination);
+    src.start();
+  }
+  function beep(freq, dur, vol, type) {
+    const a = ac();
+    const o = a.createOscillator(), g = a.createGain();
+    o.type = type || 'triangle'; o.frequency.value = freq;
+    g.gain.setValueAtTime(vol, a.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.0001, a.currentTime + dur);
+    o.connect(g); g.connect(a.destination);
+    o.start(); o.stop(a.currentTime + dur);
+  }
+  // A balloon is a CRACK, not a boom: a very short bright transient, then a brief hiss of
+  // escaping air. The old long low tail read as a gunshot.
+  const sndPop = () => {
+    noiseBurst(0.05, 0.9, 3200);   // the skin tearing — sharp and bright
+    noiseBurst(0.22, 0.28, 700);   // air rushing out behind it
+    beep(120, 0.07, 0.12, 'square');
+  };
+  const sndBank = (streak) => {
+    beep(520 + Math.min(streak, 12) * 40, 0.09, 0.16);
+    setTimeout(() => beep(780 + Math.min(streak, 12) * 55, 0.12, 0.13), 60);
+  };
+
+  // ---------- state ----------
+  const MENU = 0, PLAY = 1, DEAD = 2;
+  let state = MENU;
+  let score = 0, level = 1, streak = 0, best = +(localStorage.getItem('pressure_best') || 0);
+  let pressure = 0, capacity = 0, holding = false;
+  let wobble = 0, shake = 0, bankFx = 0;
+  let freeze = 0, punch = 0;   // hitstop and camera kick on the burst
+  let riskShown = 0;   // smoothed pop-risk, drives the rising tide
+  let shreds = [], rings = [], floaters = [];
+  let popColor = [230, 60, 60];
+  let popPressure = 0, popCapacity = 0;
+  let deadAt = 0;
+  let intro = 0;   // 0 = balloon parked on the menu, 1 = settled into the play position
+
+  const MENU_Y = 0.24, PLAY_Y = 0.42;   // balloon anchor, as a fraction of screen height
+  const easeInOut = (t) => t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+  // Where the balloon lives right now: parked up top on the menu, gliding down on start.
+  const anchorY = () => H * (state === MENU ? MENU_Y : lerp(MENU_Y, PLAY_Y, easeInOut(intro)));
+
+  // Balloon geometry, recomputed each frame so the rope and the body agree on where the knot is.
+  const B = { x: 0, y: 0, r: 26, sx: 1, sy: 1, knotY: 0 };
+  // Verlet rope: the string hangs, swings, lags behind the balloon, and falls free after a pop.
+  const ROPE_N = 16, ROPE_SEG = 6.5;
+  let rope = [], ropeFree = false;
+
+  function resetRope() {
+    const ax = W / 2, ay = anchorY() + 40;
+    rope = [];
+    for (let i = 0; i < ROPE_N; i++) {
+      rope.push({ x: ax, y: ay + i * ROPE_SEG, px: ax, py: ay + i * ROPE_SEG });
+    }
+    ropeFree = false;
+  }
+
+  function updateRope(dt, ax, ay) {
+    if (!rope.length) resetRope();
+    if (!ropeFree) { rope[0].x = ax; rope[0].y = ay; rope[0].px = ax; rope[0].py = ay; }
+
+    // A little sideways drift so the string never hangs dead-straight.
+    const wind = Math.sin(wobble * 0.4) * 7 + Math.sin(wobble * 1.6) * 2.5;
+
+    for (let i = ropeFree ? 0 : 1; i < rope.length; i++) {
+      const p = rope[i];
+      const vx = (p.x - p.px) * 0.96, vy = (p.y - p.py) * 0.96;
+      p.px = p.x; p.py = p.y;
+      // Lower segments catch more "wind" — gives the tail its lazy S-curve.
+      p.x += vx + (wind * (i / rope.length)) * dt;
+      p.y += vy + 2600 * dt * dt;
+    }
+    // Distance constraints, relaxed a few times so the rope reads as inextensible.
+    for (let k = 0; k < 8; k++) {
+      for (let i = 0; i < rope.length - 1; i++) {
+        const a = rope[i], b = rope[i + 1];
+        let dx = b.x - a.x, dy = b.y - a.y;
+        const d = Math.hypot(dx, dy) || 0.0001;
+        const diff = (d - ROPE_SEG) / d * 0.5;
+        dx *= diff; dy *= diff;
+        if (i > 0 || ropeFree) { a.x += dx; a.y += dy; }
+        b.x -= dx; b.y -= dy;
+      }
+      if (!ropeFree) { rope[0].x = ax; rope[0].y = ay; }
+    }
+  }
+
+  const inflateRate = () => T.baseInflate + (level - 1) * T.inflatePerLvl;
+  const capHi = () => Math.max(T.capMaxFloor, T.capMax + (level - 1) * T.capMaxPerLvl);
+  // The pressure at which the balloon becomes killable — the meter reads exactly popLock
+  // here. Below it, no capacity can be drawn, so the balloon is invulnerable.
+  const lockAt = () => capHi() * T.popLock;
+  const potFor = (p) => Math.floor(Math.pow(Math.max(p - lockAt(), 0), T.valueExp) / T.valueDiv * mult());
+  const mult = () => 1 + streak * T.streakStep;
+
+  // POP RISK: how far through the balloon's full pressure range we are. 0% at rest, 100%
+  // at capMax where nothing survives. It climbs from the first frame of the hold, so the
+  // gauge is always alive — but the balloon cannot burst until it passes popLock (40%).
+  function burstDepth() {
+    return Math.min(1, Math.max(0, pressure / capHi()));
+  }
+
+  function newBalloon() {
+    pressure = 0;
+    // Capacity never lands below the lock, so the first 40% of the meter is always safe.
+    const lock = lockAt(), hi = capHi();
+    capacity = lock + Math.random() * (hi - lock);
+    resetRope();
+  }
+  function startRun(fromMenu) {
+    score = 0; level = 1; streak = 0; shreds = []; rings = []; floaters = [];
+    // Only the menu has a balloon parked up top to fly in; a retry starts in place.
+    intro = fromMenu ? 0 : 1;
+    state = PLAY; newBalloon();
+  }
+
+  function press() {
+    ac();
+    if (state === MENU) { startRun(true); return; }
+    if (state === DEAD) { if (performance.now() - deadAt > 700) startRun(false); return; }
+    if (state === PLAY && !holding) { holding = true; startInflateTone(); }
+  }
+  function release() {
+    if (state !== PLAY || !holding) return;
+    holding = false; stopInflateTone();
+    bank();
+  }
+
+  function bank() {
+    const pot = potFor(pressure);
+    score += pot;
+    floaters.push({ x: B.x, y: B.y, vy: -46, life: 1, text: '+' + pot });
+    streak++; level++;
+    bankFx = 1;
+    sndBank(streak);
+    if (score > best) { best = score; localStorage.setItem('pressure_best', String(best)); }
+    newBalloon();
+  }
+
+  function pop() {
+    holding = false; stopInflateTone(); sndPop();
+    popPressure = pressure; popCapacity = capacity;
+    shake = 1; deadAt = performance.now();
+    popColor = balloonColor(burstDepth());
+
+    // A balloon does not splatter — the skin tears into a dozen irregular scraps of latex
+    // that snap outward, then flutter down like leaves because they are light and flat.
+    // The shape and the tumble are what stop this reading as gore; round droplets are what
+    // made it read as blood.
+    // A burst throws THREE different things, and it's the contrast between them that makes
+    // it read as an explosion rather than a uniform spray:
+    //   FLAPS   — a few big sheets of skin. Slow, heavy flutter. They give the burst scale.
+    //   RIBBONS — mid-size torn strips. The body of the effect.
+    //   FLECKS  — a cloud of tiny fast shards. They give it the initial violence.
+    // Same physics loop for all three; only the numbers differ.
+    shreds = [];
+
+    const spawn = (a, sp, pts, o) => shreds.push(Object.assign({
+      x: B.x + Math.cos(a) * B.r * (0.4 + Math.random() * 0.65),
+      y: B.y + Math.sin(a) * B.r * (0.4 + Math.random() * 0.65) * 1.1,
+      vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 60,
+      rot: a + (Math.random() - 0.5) * 1.4,
+      spin: Math.random() * 6.28,
+      flut: Math.random() * 6.28,
+      pts, life: 1,
+    }, o));
+
+    // Big flaps of skin — smooth-edged, slow, dramatic. Only a few. Kept long and narrow:
+    // a wide smooth polygon is just an ellipse, and a red ellipse is a blob of gore.
+    for (let i = 0; i < 5; i++) {
+      const a = (i / 5) * 6.283 + (Math.random() - 0.5) * 1.4;
+      const size = B.r * (0.13 + Math.random() * 0.13);
+      const pts = [];
+      for (let j = 0; j < 7; j++) {
+        const t = (j / 7) * 6.283;
+        const rr = size * (0.35 + Math.random() * 0.85);
+        pts.push({ x: Math.cos(t) * rr * 2.0, y: Math.sin(t) * rr * 0.42 });
+      }
+      spawn(a, 70 + Math.random() * 110, pts, {
+        smooth: true, vr: (Math.random() - 0.5) * 6, vspin: 2.5 + Math.random() * 3,
+        flutAmp: 95 + Math.random() * 80, drag: 5.6, grav: 430, decay: 0.22,
+      });
+    }
+
+    // Torn ribbons — the main body of the debris.
+    for (let i = 0; i < 14; i++) {
+      const a = (i / 14) * 6.283 + (Math.random() - 0.5) * 1.2;
+      const len = B.r * (0.09 + Math.pow(Math.random(), 1.7) * 0.2);
+      const wid = len * (0.13 + Math.random() * 0.18);
+      const pts = [
+        { x: -len, y: (Math.random() - 0.5) * wid },
+        { x: -len * 0.35, y: -wid * (0.6 + Math.random() * 0.6) },
+        { x: len * 0.3, y: -wid * (0.4 + Math.random() * 0.7) },
+        { x: len, y: (Math.random() - 0.5) * wid },
+        { x: len * 0.3, y: wid * (0.5 + Math.random() * 0.6) },
+        { x: -len * 0.4, y: wid * (0.5 + Math.random() * 0.7) },
+      ];
+      spawn(a, 140 + Math.random() * 240, pts, {
+        vr: (Math.random() - 0.5) * 17, vspin: 6 + Math.random() * 9,
+        flutAmp: 50 + Math.random() * 85, drag: 4.2, grav: 620, decay: 0.32,
+      });
+    }
+
+    // Flecks — a fast, short-lived cloud. This is the "violence" of the first 200ms.
+    for (let i = 0; i < 26; i++) {
+      const a = Math.random() * 6.283;
+      const sz = B.r * (0.022 + Math.random() * 0.045);
+      const pts = [];
+      for (let j = 0; j < 3; j++) {
+        const t = (j / 3) * 6.283 + Math.random();
+        pts.push({ x: Math.cos(t) * sz * (0.7 + Math.random()), y: Math.sin(t) * sz * (0.7 + Math.random()) });
+      }
+      spawn(a, 320 + Math.random() * 460, pts, {
+        vr: (Math.random() - 0.5) * 26, vspin: 10 + Math.random() * 14,
+        flutAmp: 20 + Math.random() * 40, drag: 2.4, grav: 980, decay: 1.05,
+      });
+    }
+
+    // Two rings: a hard fast one (the crack) and a soft slow one (the air).
+    rings = [{ life: 1, speed: 3.6, max: 150, w: 4, a: 0.5 },
+             { life: 1, speed: 1.5, max: 300, w: 16, a: 0.16 }];
+
+    // Impact: freeze the world for a beat, then kick the camera. The freeze is what makes
+    // a burst FELT — a frame of silence where the eye catches up before everything moves.
+    freeze = 0.075;
+    punch = 1;
+
+    // Nothing is holding the string up any more — let it fall.
+    ropeFree = true;
+    if (rope[0]) { rope[0].px = rope[0].x + (Math.random() - 0.5) * 6; rope[0].py = rope[0].y - 4; }
+    state = DEAD;
+  }
+
+  // ---------- input ----------
+  window.addEventListener('pointerdown', (e) => { e.preventDefault(); press(); }, { passive: false });
+  window.addEventListener('pointerup', (e) => { e.preventDefault(); release(); }, { passive: false });
+  window.addEventListener('pointercancel', release);
+  window.addEventListener('blur', release);
+  window.addEventListener('keydown', (e) => {
+    if (e.code === 'Space' || e.code === 'Enter') { e.preventDefault(); if (!e.repeat) press(); }
+  });
+  window.addEventListener('keyup', (e) => {
+    if (e.code === 'Space' || e.code === 'Enter') { e.preventDefault(); release(); }
+  });
+  window.addEventListener('contextmenu', (e) => e.preventDefault());
+  // The footer band is outside the game: keep its pointer events away from the
+  // window handlers above, so the link stays clickable and doesn't start a run.
+  const band = document.getElementById('band');
+  band.addEventListener('pointerdown', (e) => e.stopPropagation());
+  band.addEventListener('pointerup', (e) => e.stopPropagation());
+
+  // ---------- update ----------
+  function update(dt) {
+    // HITSTOP. For ~75ms after the burst the entire world stops dead — debris hangs in the
+    // air mid-flight. Then everything lets go at once. This costs nothing and is the single
+    // biggest reason a hit "lands"; without it the burst is just objects changing velocity.
+    if (freeze > 0) { freeze -= dt; return; }
+
+    wobble += dt * (holding ? 9 + pressure * 0.13 : 2.4);
+    shake = Math.max(0, shake - dt * 3.1);
+    punch = Math.max(0, punch - dt * 5.5);
+    bankFx = Math.max(0, bankFx - dt * 2.6);
+
+    if (state === PLAY) intro = Math.min(1, intro + dt / 0.7);
+
+    if (state === PLAY && holding) {
+      pressure += inflateRate() * dt;
+      updateInflateTone(pressure);
+      if (pressure >= capacity) pop();
+    }
+
+    // --- balloon geometry (shared by the body and the rope anchor) ---
+    // One number drives the readout, the colour, the tide, the wobble and the tremor,
+    // so the whole screen can never disagree with itself about how dangerous this is.
+    const risk = state === PLAY ? burstDepth() : 0;
+    // Rises quickly with the danger, drains slowly after a bank — you get a beat to
+    // watch the water go down, which is the exhale the mechanic needs.
+    const chase = risk > riskShown ? 9 : 3.2;
+    // Frozen on death: the water level you died at stays on screen as the evidence.
+    if (state !== DEAD) riskShown += (risk - riskShown) * Math.min(1, chase * dt);
+    const danger = risk;
+    const tremor = holding ? risk * risk * 5.5 : 0;
+    // Sublinear growth: a full balloon has to still fit the canvas, so each unit of
+    // pressure adds less width than the last. The danger is sold by colour and tremor.
+    B.r = 24 + Math.pow(Math.max(pressure, 0), 0.85) * 1.6;
+    B.sx = 1 + Math.sin(wobble) * (0.028 + danger * 0.05);
+    B.sy = 1 - Math.sin(wobble) * (0.028 + danger * 0.05);
+    B.x = W / 2 + Math.sin(wobble * 0.4) * 3 + (Math.random() - 0.5) * tremor;
+    B.y = anchorY() + Math.sin(wobble * 0.5) * 4 + (Math.random() - 0.5) * tremor;
+    B.knotY = B.y + B.r * 1.16 * B.sy + B.r * 0.13;
+
+    updateRope(dt, B.x, B.knotY);
+
+    for (const s of shreds) {
+      // Heavy air drag and light gravity are what sell "thin sheet of rubber" rather than
+      // "chunk of meat": the scraps snap outward, lose almost all that speed within a few
+      // frames, then flutter down slowly. Each kind carries its own drag/gravity/decay,
+      // so flecks knife away while flaps hang in the air.
+      const drag = Math.exp(-s.drag * dt);
+      s.vy += s.grav * dt;
+      s.vx *= drag; s.vy *= drag;
+      s.flut += dt * 7;
+      s.x += (s.vx + Math.sin(s.flut) * s.flutAmp) * dt;   // flutter across the fall
+      s.y += s.vy * dt;
+      s.rot += s.vr * dt; s.vr *= Math.exp(-1.2 * dt);
+      s.spin += s.vspin * dt; s.vspin *= Math.exp(-0.55 * dt);
+      s.life -= dt * s.decay;
+    }
+    shreds = shreds.filter(s => s.life > 0 && s.y < H + 90);
+
+    for (const r of rings) r.life -= dt * r.speed;
+    rings = rings.filter(r => r.life > 0);
+
+    for (const f of floaters) { f.y += f.vy * dt; f.vy *= 0.94; f.life -= dt * 0.85; }
+    floaters = floaters.filter(f => f.life > 0);
+  }
+
+  // ---------- draw ----------
+  const lerp = (a, b, t) => a + (b - a) * t;
+  const ink = (a) => `rgba(24,26,33,${a})`;   // text/lines on the white field
+
+  function hsl2rgb(h, s, l) {
+    const k = n => (n + h / 30) % 12;
+    const a = s * Math.min(l, 1 - l);
+    const f = n => l - a * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1)));
+    return [Math.round(f(0) * 255), Math.round(f(8) * 255), Math.round(f(4) * 255)];
+  }
+
+  function balloonColor(danger) {
+    // teal -> amber -> red. Interpolate around the hue wheel, not through RGB —
+    // a straight RGB lerp between teal and red passes through grey and the balloon
+    // looks like it's dying rather than heating up.
+    const t = Math.min(Math.max(danger, 0), 1);
+    // Eased first leg: hold the calm teal while the odds are genuinely fine, so that
+    // the slide to amber/red lands as an event rather than a gradual drift.
+    const hue = t < 0.6
+      ? lerp(168, 44, Math.pow(t / 0.6, 1.8))
+      : lerp(44, 4, (t - 0.6) / 0.4);
+    const sat = lerp(0.58, 0.86, t);
+    const lig = lerp(0.60, 0.55, t);
+    return hsl2rgb(hue, sat, lig);
+  }
+
+  // The classic balloon silhouette: a wide round dome that tapers into a narrow neck.
+  // Drawn as two mirrored cubic curves so the shoulders stay full while the base pinches in.
+  function balloonPath(r, sx, sy) {
+    const w = r * sx, h = r * 1.16 * sy;
+    const neck = w * 0.13;   // half-width where the latex gathers into the knot
+    ctx.beginPath();
+    ctx.moveTo(0, -h);
+    // right shoulder down to the neck
+    ctx.bezierCurveTo(w * 1.22, -h * 0.92, w * 1.1, h * 0.34, neck, h * 0.94);
+    // the little cinch just above the knot
+    ctx.quadraticCurveTo(neck * 0.75, h * 1.02, 0, h * 1.05);
+    ctx.quadraticCurveTo(-neck * 0.75, h * 1.02, -neck, h * 0.94);
+    // left shoulder back up to the crown
+    ctx.bezierCurveTo(-w * 1.1, h * 0.34, -w * 1.22, -h * 0.92, 0, -h);
+    ctx.closePath();
+  }
+
+  function drawRope(r, g, b) {
+    if (rope.length < 2) return;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    // Taper the string toward its free end and fade it out, so it reads as thread, not wire.
+    for (let i = 0; i < rope.length - 1; i++) {
+      const t = i / (rope.length - 1);
+      const a = rope[i], c = rope[i + 1];
+      ctx.strokeStyle = ink(0.55 - t * 0.3);
+      ctx.lineWidth = 2.1 - t * 1.35;
+      ctx.beginPath();
+      ctx.moveTo(a.x, a.y);
+      // Aim at the midpoint of the next segment so the polyline renders as a smooth curve.
+      const nx = rope[i + 2] ? (c.x + rope[i + 2].x) / 2 : c.x;
+      const ny = rope[i + 2] ? (c.y + rope[i + 2].y) / 2 : c.y;
+      ctx.quadraticCurveTo(c.x, c.y, nx, ny);
+      ctx.stroke();
+    }
+  }
+
+  function drawBalloon() {
+    const risk = burstDepth();     // 0 = cannot pop yet, 1 = cannot survive
+    const danger = risk;
+    // Colour tracks RISK, not size — so the balloon and the readout never disagree.
+    // It stays cool for most of the inflate, then heats up hard exactly when it matters.
+    const [r, g, b] = balloonColor(risk);
+    const { x: cx, y: cy, r: rad, sx, sy } = B;
+    const h = rad * 1.16 * sy;
+
+    drawRope(r, g, b);
+
+    ctx.save();
+    ctx.translate(cx, cy);
+
+    // The knot is a small pinched nub tied below the neck. Drawn first, darker, so the
+    // body's own edge overlaps it and the two read as one continuous piece of latex.
+    ctx.fillStyle = `rgb(${r * 0.72 | 0},${g * 0.72 | 0},${b * 0.72 | 0})`;
+    ctx.beginPath();
+    ctx.moveTo(-rad * 0.09, h * 0.96);
+    ctx.quadraticCurveTo(-rad * 0.13, h + rad * 0.2, 0, h + rad * 0.16);
+    ctx.quadraticCurveTo(rad * 0.13, h + rad * 0.2, rad * 0.09, h * 0.96);
+    ctx.closePath();
+    ctx.fill();
+    // the tied bead itself
+    ctx.beginPath();
+    ctx.ellipse(0, h + rad * 0.1, rad * 0.075, rad * 0.06, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Soft contact shadow rather than a neon glow — on white, a halo just reads as blur.
+    ctx.shadowColor = `rgba(${r * 0.5 | 0},${g * 0.5 | 0},${b * 0.5 | 0},0.35)`;
+    ctx.shadowBlur = 22 + danger * 18;
+    ctx.shadowOffsetY = 8;
+
+    // body
+    const grd = ctx.createRadialGradient(-rad * 0.34, -rad * 0.42, rad * 0.08, 0, rad * 0.1, rad * 1.35);
+    grd.addColorStop(0, `rgb(${Math.min(255, r + 78)},${Math.min(255, g + 62)},${Math.min(255, b + 62)})`);
+    grd.addColorStop(0.62, `rgb(${r},${g},${b})`);
+    grd.addColorStop(1, `rgb(${r * 0.66 | 0},${g * 0.66 | 0},${b * 0.66 | 0})`);
+    ctx.fillStyle = grd;
+    balloonPath(rad, sx, sy);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.shadowOffsetY = 0;
+
+    // rim light along the lower-right edge — sells the latex volume
+    ctx.save();
+    balloonPath(rad, sx, sy);
+    ctx.clip();
+    const rim = ctx.createLinearGradient(rad * 0.2, rad * 0.3, rad * 1.1, rad * 1.1);
+    rim.addColorStop(0, 'rgba(255,255,255,0)');
+    rim.addColorStop(1, 'rgba(255,255,255,0.22)');
+    ctx.fillStyle = rim;
+    ctx.fillRect(-rad * 1.4, -rad * 1.4, rad * 2.8, rad * 2.8);
+    ctx.restore();
+
+    // specular highlights: one soft, one tight
+    ctx.fillStyle = 'rgba(255,255,255,0.34)';
+    ctx.beginPath();
+    ctx.ellipse(-rad * 0.36, -rad * 0.44, rad * 0.17, rad * 0.26, -0.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,0.5)';
+    ctx.beginPath();
+    ctx.ellipse(-rad * 0.24, -rad * 0.62, rad * 0.05, rad * 0.08, -0.4, 0, Math.PI * 2);
+    ctx.fill();
+
+    // stress veins when it's getting real
+    if (holding && risk > 0.25) {
+      ctx.save();
+      balloonPath(rad, sx, sy);
+      ctx.clip();
+      ctx.strokeStyle = `rgba(255,255,255,${(risk - 0.25) * 0.7})`;
+      ctx.lineWidth = 1;
+      for (let i = 0; i < 5; i++) {
+        const a = (i / 5) * Math.PI * 2 + wobble * 0.2;
+        ctx.beginPath();
+        ctx.moveTo(Math.cos(a) * rad * 0.35, Math.sin(a) * rad * 0.35);
+        ctx.lineTo(Math.cos(a + 0.35) * rad * 0.95, Math.sin(a + 0.35) * rad * 1.0);
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+    ctx.restore();
+
+    // Pot value on the balloon. Nothing is shown while the balloon is still worthless —
+    // the number appearing IS the moment the balloon becomes both valuable and lethal.
+    const pot = state === PLAY ? potFor(pressure) : 0;
+    if (pot > 0) {
+      ctx.font = '700 22px ui-monospace, monospace';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillStyle = 'rgba(10,12,16,0.85)';
+      ctx.fillText('+' + pot, cx, cy);
+    }
+  }
+
+  // Risk is no longer a bar you have to look at — it's the room filling up behind you.
+  // A tide of colour rises from the floor, its height and heat tracking the pop odds,
+  // so peripheral vision carries the warning while your eyes stay on the balloon.
+  function drawRiskTide() {
+    if (riskShown < 0.004) return;
+    // After a burst the tide holds the colour it died at. Letting it drain back down the
+    // hue ramp turned the death screen green, which read as "well done".
+    const [r, g, b] = state === DEAD ? popColor : balloonColor(riskShown);
+    // One gradient, full bleed, floor to crest. At 100% risk it has swallowed the screen.
+    const top = H - H * riskShown;
+    const swell = Math.sin(wobble * 1.4) * (2 + riskShown * 6);
+
+    const grd = ctx.createLinearGradient(0, top + swell, 0, H);
+    grd.addColorStop(0, `rgba(${r},${g},${b},0)`);
+    grd.addColorStop(1, `rgba(${r},${g},${b},${0.30 + riskShown * 0.62})`);
+    ctx.fillStyle = grd;
+    ctx.fillRect(0, top + swell, W, H - top - swell);
+  }
+
+  // ---------- arcade type ----------
+  // Everything on screen is set with these three primitives: tracked type, hairlines,
+  // and a stat strip. No panels, no cards, no shadows — the type IS the interface.
+  const RED = '#e5342b', GOLD = '#b45309';
+
+  function type(text, x, y, color, size, weight, sp, align) {
+    if ('letterSpacing' in ctx) ctx.letterSpacing = (sp === undefined ? 2 : sp) + 'px';
+    ctx.font = `${weight || 700} ${size}px ui-monospace, monospace`;
+    ctx.fillStyle = color;
+    ctx.textAlign = align || 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(text, x, y);
+    if ('letterSpacing' in ctx) ctx.letterSpacing = '0px';
+  }
+
+  function hairline(y, w, alpha) {
+    ctx.strokeStyle = ink(alpha);
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(W / 2 - w / 2, y + 0.5);
+    ctx.lineTo(W / 2 + w / 2, y + 0.5);
+    ctx.stroke();
+  }
+
+  // Attract-mode blink — the oldest "press start" tell there is.
+  const blink = () => ((performance.now() / 460) | 0) % 2 === 0;
+
+  function statStrip(items, y) {
+    const gap = Math.min(110, (W - 40) / items.length);
+    items.forEach(([k, v, color], i) => {
+      const x = W / 2 + (i - (items.length - 1) / 2) * gap;
+      type(k, x, y, ink(0.32), 9, 700, 1.5);
+      type(v, x, y + 21, color || ink(0.82), 15, 700, 0);
+      if (i < items.length - 1) {
+        ctx.strokeStyle = ink(0.11);
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo((x + gap / 2) + 0.5, y - 7);
+        ctx.lineTo((x + gap / 2) + 0.5, y + 29);
+        ctx.stroke();
+      }
+    });
+  }
+
+  function drawRiskLabel() {
+    // No SAFE tell: the lock is a floor the player learns by feel, not a state we announce.
+    type('POP RISK', W / 2 - 30, H - 30, ink(0.32), 9, 700, 1.5, 'right');
+    type(Math.round(riskShown * 100) + '%', W / 2 - 18, H - 30, ink(0.45 + riskShown * 0.45), 13, 700, 0, 'left');
+  }
+
+  function drawHud() {
+    type(String(score), 26, 36, ink(0.92), 30, 800, 0, 'left');
+    type('BANKED', 26, 62, ink(0.34), 9, 700, 1.5, 'left');
+    type('x' + mult().toFixed(2), W - 26, 36, streak > 0 ? GOLD : ink(0.35), 16, 700, 0, 'right');
+    type('BALLOON ' + level, W - 26, 62, ink(0.34), 9, 700, 1.5, 'right');
+  }
+
+  function drawMenu() {
+    // Sits under the parked balloon and its string, not on top of them.
+    const cy = H * 0.60;
+    type('PRESSURE', W / 2, cy, ink(0.93), 54, 800, 8);
+    hairline(cy + 34, 260, 0.14);
+    type('HOLD TO INFLATE  ·  RELEASE TO BANK', W / 2, cy + 58, ink(0.42), 10, 700, 2);
+    type('ONE POP ENDS THE RUN', W / 2, cy + 78, RED, 10, 700, 2);
+    if (blink()) type('PRESS SPACE', W / 2, cy + 128, ink(0.85), 13, 800, 3);
+    if (best > 0) type('BEST  ' + best, W / 2, H - 34, ink(0.3), 10, 700, 2);
+  }
+
+  function drawGameOver() {
+    const cy = H * 0.46;
+    const isBest = score >= best && score > 0;
+    // A short fade-in so it lands with the shockwave rather than snapping on.
+    ctx.globalAlpha = Math.min(1, (performance.now() - deadAt) / 220);
+
+    type('POP', W / 2, cy - 120, RED, 62, 800, 6);
+    type('BURST AT ' + popCapacity.toFixed(0) + ' PRESSURE', W / 2, cy - 76, ink(0.34), 9, 700, 2);
+    hairline(cy - 52, 200, 0.13);
+
+    type(String(score), W / 2, cy + 6, ink(0.93), 76, 800, 0);
+    type(isBest ? '★  NEW BEST' : 'FINAL SCORE', W / 2, cy + 54, isBest ? GOLD : ink(0.36), 9, 700, 2);
+
+    statStrip([
+      ['BANKED', String(level - 1)],
+      ['LOST', '+' + potFor(popPressure), RED],
+      ['BEST', String(best)],
+    ], cy + 104);
+
+    if (blink()) type('PRESS SPACE', W / 2, cy + 180, ink(0.85), 13, 800, 3);
+    ctx.globalAlpha = 1;
+  }
+
+  // The burst: an expanding puff of air, and the torn skin tumbling away from it.
+  function drawBurst() {
+    const [r, g, b] = popColor;
+
+    // Two shockwaves: a hard thin one that snaps outward (the crack you hear), and a soft
+    // wide one that swells slowly behind it (the air). One ring alone looks like a UI pulse.
+    for (const ring of rings) {
+      const t = 1 - Math.max(0, ring.life);
+      ctx.strokeStyle = `rgba(${r},${g},${b},${Math.max(0, ring.life) * ring.a})`;
+      ctx.lineWidth = ring.w * Math.max(0, ring.life);
+      ctx.beginPath();
+      ctx.arc(B.x, B.y, 16 + t * ring.max, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+
+    for (const s of shreds) {
+      const fade = Math.min(1, s.life * 2.2);
+      // A flat sheet flipping end-over-end: squash it on one axis as it turns, so it goes
+      // edge-on and vanishes to a line, then swings back. Cheap, and unmistakably NOT a blob.
+      const facing = Math.cos(s.spin);
+      ctx.save();
+      ctx.translate(s.x, s.y);
+      ctx.rotate(s.rot);
+      // Flip about the LONG axis: squash the width, never the length. Scaling the long axis
+      // turned every ribbon into a chunky blob at mid-flip — which is what read as gore.
+      ctx.scale(1, facing);
+      ctx.globalAlpha = fade;
+      // Backside of the latex is darker — you see it every time a scrap turns over.
+      const shade = facing >= 0 ? 1 : 0.72;
+      ctx.fillStyle = `rgb(${r * shade | 0},${g * shade | 0},${b * shade | 0})`;
+      // Ribbons and flecks get straight jagged edges — a tear in rubber is not smooth.
+      // The big flaps get curved edges, because they're still recognisably balloon skin.
+      const p = s.pts;
+      ctx.beginPath();
+      if (s.smooth) {
+        ctx.moveTo((p[0].x + p[p.length - 1].x) / 2, (p[0].y + p[p.length - 1].y) / 2);
+        for (let i = 0; i < p.length; i++) {
+          const c = p[i], n = p[(i + 1) % p.length];
+          ctx.quadraticCurveTo(c.x, c.y, (c.x + n.x) / 2, (c.y + n.y) / 2);
+        }
+      } else {
+        ctx.moveTo(p[0].x, p[0].y);
+        for (let i = 1; i < p.length; i++) ctx.lineTo(p[i].x, p[i].y);
+      }
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  function draw() {
+    ctx.save();
+    if (shake > 0) ctx.translate((Math.random() - 0.5) * shake * 30, (Math.random() - 0.5) * shake * 30);
+    // Camera kick: a hard snap-zoom out of the burst that eases back. Sells the shove.
+    if (punch > 0) {
+      const k = 1 + punch * punch * 0.07;
+      ctx.translate(B.x, B.y);
+      ctx.scale(k, k);
+      ctx.translate(-B.x, -B.y);
+    }
+
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(-40, -40, W + 80, H + 80);
+
+    // The tide is the background — it sits on the white before anything else.
+    if (state === PLAY || state === DEAD) drawRiskTide();
+
+    // subtle wash while banking
+    if (bankFx > 0) {
+      ctx.fillStyle = `rgba(16,185,129,${bankFx * 0.07})`;
+      ctx.fillRect(-40, -40, W + 80, H + 80);
+    }
+
+    // The balloon is the one thing that persists across the menu→play cut: it doesn't
+    // get swapped out, it flies down into position while the copy around it changes.
+    if (state === MENU || state === PLAY) drawBalloon();
+
+    if (state === MENU || (state === PLAY && intro < 0.5)) {
+      // Menu copy clears out in the first half of the flight.
+      ctx.globalAlpha = state === MENU ? 1 : 1 - intro / 0.5;
+      drawMenu();
+      ctx.globalAlpha = 1;
+    }
+
+    if (state === PLAY) {
+      // Game furniture arrives in the second half, as the balloon settles.
+      ctx.globalAlpha = Math.max(0, (intro - 0.5) / 0.5);
+      drawRiskLabel();
+      drawHud();
+      // The prompt rides with the balloon: pinned under the tail of the string, so it
+      // stays in the player's gaze instead of parked at the bottom of the screen.
+      let tail = B.knotY;
+      for (const pt of rope) tail = Math.max(tail, pt.y);
+      const promptY = Math.min(tail + 30, H - 64);
+      type(holding ? 'RELEASE TO BANK' : 'HOLD TO INFLATE', W / 2, promptY, ink(0.4), 10, 700, 2);
+      ctx.globalAlpha = 1;
+    }
+
+    if (state === DEAD) {
+      drawRope(255, 120, 120);   // the limp string, still falling
+      drawGameOver();
+    }
+
+    drawBurst();
+
+    for (const f of floaters) {
+      ctx.globalAlpha = Math.max(0, f.life);
+      ctx.fillStyle = '#059669';
+      ctx.font = '700 26px ui-monospace, monospace';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(f.text, f.x, f.y);
+    }
+    ctx.globalAlpha = 1;
+    ctx.restore();
+  }
+
+  // ---------- loop ----------
+  let last = performance.now();
+  function frame(now) {
+    const dt = Math.min((now - last) / 1000, 0.05);
+    last = now;
+    update(dt);
+    draw();
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,890 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="assets/icon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Montserrat:ital,wght@0,100..900;1,100..900&display=swap"
+      rel="stylesheet"
+    />
+    <title>Web developer and designer | Akbar Ali | Pulimoodan</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            fontFamily: {
+              montserrat: ["Montserrat", "sans-serif"],
+            },
+          },
+        },
+      };
+    </script>
+  </head>
+  <body>
+    <div id="wrapper" class="bg-white dark:bg-zinc-900 relative min-h-screen">
+      <button
+        id="dark-toggle"
+        aria-label="Toggle dark mode"
+        class="w-8 h-8 flex items-center justify-center border border-slate-300 dark:border-slate-600 dark:text-white rounded fixed top-4 right-4"
+      >
+        <svg
+          id="sun-icon"
+          class="w-5 hidden"
+          xmlns="http://www.w3.org/2000/svg"
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke-width="1.5"
+          stroke="currentColor"
+        >
+          <path
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            d="M12 3v2.25m6.364.386-1.591 1.591M21 12h-2.25m-.386 6.364-1.591-1.591M12 18.75V21m-4.773-4.227-1.591 1.591M5.25 12H3m4.227-4.773L5.636 5.636M15.75 12a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0Z"
+          />
+        </svg>
+        <svg
+          id="moon-icon"
+          class="w-4"
+          xmlns="http://www.w3.org/2000/svg"
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke-width="1.5"
+          stroke="currentColor"
+        >
+          <path
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            d="M21.752 15.002A9.72 9.72 0 0 1 18 15.75c-5.385 0-9.75-4.365-9.75-9.75 0-1.33.266-2.597.748-3.752A9.753 9.753 0 0 0 3 11.25C3 16.635 7.365 21 12.75 21a9.753 9.753 0 0 0 9.002-5.998Z"
+          />
+        </svg>
+      </button>
+
+      <div
+        class="font-montserrat max-w-[700px] mx-auto py-12 flex flex-col gap-6 p-4"
+      >
+        <h1 class="font-medium dark:text-white">
+          👋 Hi there, I'm <span class="font-bold">Akbar</span>
+        </h1>
+
+        <div class="flex items-center gap-3 text-sm flex-wrap">
+          <div
+            class="rounded bg-lime-200 border border-slate-300 px-3 py-1 font-medium dark:border-slate-600 dark:bg-lime-300"
+          >
+            Web Developer
+          </div>
+          <div
+            class="rounded bg-lime-200 border border-slate-300 px-3 py-1 font-medium dark:border-slate-600 dark:bg-lime-300"
+          >
+            UX Designer
+          </div>
+          <div
+            class="rounded bg-lime-200 border border-slate-300 px-3 py-1 font-medium dark:border-slate-600 dark:bg-lime-300"
+          >
+            Writer
+          </div>
+        </div>
+
+        <div class="relative gap-4 flex flex-col">
+          <span
+            class="font-bold text-purple-700 md:absolute md:top-0 md:left-[-20px] md:translate-x-[-100%] dark:text-purple-400"
+          >
+            ✨ About
+          </span>
+          <div class="flex items-center gap-3 text-sm flex-wrap">
+            <img
+              src="assets/images/1.jpg"
+              alt="Portrait 0"
+              class="h-[170px] rounded-md border border-slate-300 dark:border-slate-600"
+            />
+            <img
+              src="assets/images/2.jpg"
+              alt="Portrait 1"
+              class="h-[170px] rounded-md border border-slate-300 dark:border-slate-600"
+            />
+            <img
+              src="assets/images/3.jpg"
+              alt="Portrait 2"
+              class="h-[170px] rounded-md border border-slate-300 dark:border-slate-600"
+            />
+            <img
+              src="assets/images/4.jpg"
+              alt="Portrait 3"
+              class="h-[170px] rounded-md border border-slate-300 dark:border-slate-600"
+            />
+          </div>
+        </div>
+
+        <div
+          class="flex flex-col gap-4 text-sm leading-6 font-medium dark:font-normal dark:text-white relative"
+        >
+          <p>
+            Started from my high school, curious about games and computers,
+            I've tried everything found interesting to me until I realized that
+            <span
+              class="bg-purple-100 px-1 rounded border border-purple-300 text-slate-600 italic dark:border-purple-800 dark:bg-purple-950 dark:text-gray-300"
+              >web development</span
+            >
+            is my favourite ⭐.
+          </p>
+          <p>
+            I was doing
+            <span
+              class="bg-purple-100 px-1 rounded border border-purple-300 text-slate-600 italic dark:border-purple-800 dark:bg-purple-950 dark:text-gray-300"
+              >freelance</span
+            >
+            web designing and development ⌨️ (mostly static websites) during my
+            <span
+              class="bg-purple-100 px-1 rounded border border-purple-300 text-slate-600 italic dark:border-purple-800 dark:bg-purple-950 dark:text-gray-300"
+              >high school</span
+            >, to buy my first personal computer 🖥️ and accessories. Yes, I've
+            learnt web development with my old smartphone 📱 and eventually my
+            friend helped me with his computer to deliver my freelance gigs.
+          </p>
+          <p>
+            <span
+              class="bg-purple-100 px-1 rounded border border-purple-300 text-slate-600 italic dark:border-purple-800 dark:bg-purple-950 dark:text-gray-300"
+              >Game development</span
+            >
+            🎮 was the main attraction for me to get into technologies and
+            still I'm trying out things and making games as a
+            <span
+              class="bg-purple-100 px-1 rounded border border-purple-300 text-slate-600 italic dark:border-purple-800 dark:bg-purple-950 dark:text-gray-300"
+              >hobby</span
+            >
+            (I must say, I'm not an expert).
+          </p>
+          <p>
+            Useful
+            <span
+              class="bg-purple-100 px-1 rounded border border-purple-300 text-slate-600 italic dark:border-purple-800 dark:bg-purple-950 dark:text-gray-300"
+              >links</span
+            >
+            :
+          </p>
+
+          <div class="flex items-center gap-4 flex-wrap">
+            <a
+              href="https://www.instagram.com/stupidforages"
+              target="_blank"
+              class="text-blue-600 underline flex items-center gap-1 dark:text-blue-300"
+            >
+              <img
+                src="assets/icons/insta.png"
+                alt="Social media icon"
+                class="w-4 rounded"
+              />
+              <div class="flex items-center">
+                my clicks
+                <svg
+                  class="w-4"
+                  xmlns="http://www.w3.org/2000/svg"
+                  viewBox="0 0 20 20"
+                  fill="currentColor"
+                >
+                  <path
+                    fill-rule="evenodd"
+                    d="M5.22 14.78a.75.75 0 0 0 1.06 0l7.22-7.22v5.69a.75.75 0 0 0 1.5 0v-7.5a.75.75 0 0 0-.75-.75h-7.5a.75.75 0 0 0 0 1.5h5.69l-7.22 7.22a.75.75 0 0 0 0 1.06Z"
+                    clip-rule="evenodd"
+                  />
+                </svg>
+              </div>
+            </a>
+            <a
+              href="https://www.twitter.com/pulimoodanhere"
+              target="_blank"
+              class="text-blue-600 underline flex items-center gap-1 dark:text-blue-300"
+            >
+              <img
+                src="assets/icons/twitter.png"
+                alt="Social media icon"
+                class="w-4 rounded"
+              />
+              <div class="flex items-center">
+                random thoughts
+                <svg
+                  class="w-4"
+                  xmlns="http://www.w3.org/2000/svg"
+                  viewBox="0 0 20 20"
+                  fill="currentColor"
+                >
+                  <path
+                    fill-rule="evenodd"
+                    d="M5.22 14.78a.75.75 0 0 0 1.06 0l7.22-7.22v5.69a.75.75 0 0 0 1.5 0v-7.5a.75.75 0 0 0-.75-.75h-7.5a.75.75 0 0 0 0 1.5h5.69l-7.22 7.22a.75.75 0 0 0 0 1.06Z"
+                    clip-rule="evenodd"
+                  />
+                </svg>
+              </div>
+            </a>
+            <a
+              href="https://www.linkedin.com/in/pulimoodan"
+              target="_blank"
+              class="text-blue-600 underline flex items-center gap-1 dark:text-blue-300"
+            >
+              <img
+                src="assets/icons/linkedin.png"
+                alt="Social media icon"
+                class="w-4 rounded"
+              />
+              <div class="flex items-center">
+                professional talks
+                <svg
+                  class="w-4"
+                  xmlns="http://www.w3.org/2000/svg"
+                  viewBox="0 0 20 20"
+                  fill="currentColor"
+                >
+                  <path
+                    fill-rule="evenodd"
+                    d="M5.22 14.78a.75.75 0 0 0 1.06 0l7.22-7.22v5.69a.75.75 0 0 0 1.5 0v-7.5a.75.75 0 0 0-.75-.75h-7.5a.75.75 0 0 0 0 1.5h5.69l-7.22 7.22a.75.75 0 0 0 0 1.06Z"
+                    clip-rule="evenodd"
+                  />
+                </svg>
+              </div>
+            </a>
+            <a
+              href="https://www.github.com/pulimoodan"
+              target="_blank"
+              class="text-blue-600 underline flex items-center gap-1 dark:text-blue-300"
+            >
+              <img
+                src="assets/icons/github.png"
+                alt="Social media icon"
+                class="w-4 rounded"
+              />
+              <div class="flex items-center">
+                valuable lines of code
+                <svg
+                  class="w-4"
+                  xmlns="http://www.w3.org/2000/svg"
+                  viewBox="0 0 20 20"
+                  fill="currentColor"
+                >
+                  <path
+                    fill-rule="evenodd"
+                    d="M5.22 14.78a.75.75 0 0 0 1.06 0l7.22-7.22v5.69a.75.75 0 0 0 1.5 0v-7.5a.75.75 0 0 0-.75-.75h-7.5a.75.75 0 0 0 0 1.5h5.69l-7.22 7.22a.75.75 0 0 0 0 1.06Z"
+                    clip-rule="evenodd"
+                  />
+                </svg>
+              </div>
+            </a>
+            <a
+              href="mailto:akbaraliongo@gmail.com"
+              target="_blank"
+              class="text-blue-600 underline flex items-center gap-1 dark:text-blue-300"
+            >
+              <img
+                src="assets/icons/mail.png"
+                alt="Social media icon"
+                class="w-4 rounded"
+              />
+              <div class="flex items-center">
+                write an email
+                <svg
+                  class="w-4"
+                  xmlns="http://www.w3.org/2000/svg"
+                  viewBox="0 0 20 20"
+                  fill="currentColor"
+                >
+                  <path
+                    fill-rule="evenodd"
+                    d="M5.22 14.78a.75.75 0 0 0 1.06 0l7.22-7.22v5.69a.75.75 0 0 0 1.5 0v-7.5a.75.75 0 0 0-.75-.75h-7.5a.75.75 0 0 0 0 1.5h5.69l-7.22 7.22a.75.75 0 0 0 0 1.06Z"
+                    clip-rule="evenodd"
+                  />
+                </svg>
+              </div>
+            </a>
+          </div>
+        </div>
+
+        <div class="h-[1px] bg-slate-200 dark:bg-gray-700"></div>
+
+        <div
+          class="flex flex-col gap-4 text-sm leading-6 font-medium dark:font-normal dark:text-white relative"
+        >
+          <span
+            class="font-bold text-purple-700 md:absolute md:top-0 md:left-[-20px] md:translate-x-[-100%] dark:text-purple-400"
+          >
+            ✨ Skills
+          </span>
+          <p>
+            New
+            <span
+              class="bg-purple-100 px-1 rounded border border-purple-300 text-slate-600 italic dark:border-purple-800 dark:bg-purple-950 dark:text-gray-300"
+              >tech stacks</span
+            >
+            and
+            <span
+              class="bg-purple-100 px-1 rounded border border-purple-300 text-slate-600 italic dark:border-purple-800 dark:bg-purple-950 dark:text-gray-300"
+              >tools</span
+            >
+            always drive me curious. I try to learn and test new technologies
+            pop up in the market. Here are my
+            <span
+              class="bg-purple-100 px-1 rounded border border-purple-300 text-slate-600 italic dark:border-purple-800 dark:bg-purple-950 dark:text-gray-300"
+              >favourites</span
+            >
+            :
+          </p>
+
+          <div class="flex gap-4 items-center flex-wrap">
+            <div
+              class="flex items-center gap-2 px-4 py-2 bg-green-100 rounded border border-slate-300 dark:border-slate-600 dark:bg-green-900"
+            >
+              <img src="assets/icons/react.png" alt="Skill icon" class="h-6" />
+              <span>React</span>
+            </div>
+            <div
+              class="flex items-center gap-2 px-4 py-2 bg-green-100 rounded border border-slate-300 dark:border-slate-600 dark:bg-green-900"
+            >
+              <img src="assets/icons/next.png" alt="Skill icon" class="h-6" />
+              <span>Next</span>
+            </div>
+            <div
+              class="flex items-center gap-2 px-4 py-2 bg-green-100 rounded border border-slate-300 dark:border-slate-600 dark:bg-green-900"
+            >
+              <img src="assets/icons/nest.png" alt="Skill icon" class="h-6" />
+              <span>Nest</span>
+            </div>
+            <div
+              class="flex items-center gap-2 px-4 py-2 bg-green-100 rounded border border-slate-300 dark:border-slate-600 dark:bg-green-900"
+            >
+              <img src="assets/icons/remix.png" alt="Skill icon" class="h-6" />
+              <span>Remix</span>
+            </div>
+            <div
+              class="flex items-center gap-2 px-4 py-2 bg-green-100 rounded border border-slate-300 dark:border-slate-600 dark:bg-green-900"
+            >
+              <img src="assets/icons/figma.png" alt="Skill icon" class="h-6" />
+              <span>Figma</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="h-[1px] bg-slate-200 dark:bg-gray-700"></div>
+
+        <div
+          class="flex flex-col gap-4 text-sm leading-6 font-medium dark:font-normal dark:text-white relative"
+        >
+          <span
+            class="font-bold text-purple-700 md:absolute md:top-0 md:left-[-20px] md:translate-x-[-100%] dark:text-purple-400"
+          >
+            ✨ Blog
+          </span>
+          <p>
+            <span
+              class="bg-purple-100 px-1 rounded border border-purple-300 text-slate-600 italic dark:border-purple-800 dark:bg-purple-950 dark:text-gray-300"
+              >Writing</span
+            >
+            stories and poems (also
+            <span
+              class="bg-purple-100 px-1 rounded border border-purple-300 text-slate-600 italic dark:border-purple-800 dark:bg-purple-950 dark:text-gray-300"
+              >reading</span
+            >) was my hobbies since my childhood in which I still think I had a
+            knack (I'm not saying this out of self confidence, I still regret
+            that I became a software engineer instead of a world famous
+            <span
+              class="bg-purple-100 px-1 rounded border border-purple-300 text-slate-600 italic dark:border-purple-800 dark:bg-purple-950 dark:text-gray-300"
+              >author</span
+            >).
+          </p>
+          <p>
+            Somewhere in the period of building my career, I lost my skills on
+            writing and now, trying to redevelop that, reading a lot and
+            imagining a lot (I won't spend valuable time looking at the
+            ceiling).
+          </p>
+          <p>
+            I write
+            <span
+              class="bg-purple-100 px-1 rounded border border-purple-300 text-slate-600 italic dark:border-purple-800 dark:bg-purple-950 dark:text-gray-300"
+              >blog</span
+            >
+            posts nowadays, mostly technical things: challenges faced in
+            development, new features or tools I discovered, new tools or
+            solutions I built, and so on.
+          </p>
+          <p>
+            Here are some
+            <span
+              class="bg-purple-100 px-1 rounded border border-purple-300 text-slate-600 italic dark:border-purple-800 dark:bg-purple-950 dark:text-gray-300"
+              >recent posts</span
+            >
+            :
+          </p>
+
+          <div
+            id="posts"
+            class="grid items-stretch md:grid-cols-4 sm:grid-cols-2 grid-cols-1 gap-4"
+          ></div>
+        </div>
+
+        <div class="h-[1px] bg-slate-200 dark:bg-gray-700"></div>
+
+        <div
+          class="flex flex-col gap-4 text-sm leading-6 font-medium dark:font-normal dark:text-white relative"
+        >
+          <span
+            class="font-bold text-purple-700 md:absolute md:top-0 md:left-[-20px] md:translate-x-[-100%] dark:text-purple-400"
+          >
+            ✨ Career
+          </span>
+          <p>
+            Got my first
+            <span
+              class="bg-purple-100 px-1 rounded border border-purple-300 text-slate-600 italic dark:border-purple-800 dark:bg-purple-950 dark:text-gray-300"
+              >offer letter</span
+            >
+            at the final year of my
+            <span
+              class="bg-purple-100 px-1 rounded border border-purple-300 text-slate-600 italic dark:border-purple-800 dark:bg-purple-950 dark:text-gray-300"
+              >high school</span
+            >, while I was preparing for my exams. I was so much excited about
+            the industry and realized that it was the best opportunity to start
+            exploring.
+          </p>
+          <p>
+            Signed that offer letter after my exams and I was ready to go.
+            Almost everyone from my family and friends were concerned about me
+            choosing a job over higher education, but I was already figured out
+            my future.
+          </p>
+          <p>
+            Studying
+            <span
+              class="bg-purple-100 px-1 rounded border border-purple-300 text-slate-600 italic dark:border-purple-800 dark:bg-purple-950 dark:text-gray-300"
+              >Bachelor of Computer Application</span
+            >
+            at
+            <span
+              class="bg-purple-100 px-1 rounded border border-purple-300 text-slate-600 italic dark:border-purple-800 dark:bg-purple-950 dark:text-gray-300"
+              >Manipal University</span
+            >
+            along with my job now, which is almost manageable by a 21 year old.
+            Here is my
+            <span
+              class="bg-purple-100 px-1 rounded border border-purple-300 text-slate-600 italic dark:border-purple-800 dark:bg-purple-950 dark:text-gray-300"
+              >career roadmap</span
+            >
+            :
+          </p>
+
+          <div class="flex flex-col gap-4">
+            <div
+              class="flex flex-col gap-2 p-4 bg-green-50 dark:bg-green-900 rounded border border-slate-300 dark:border-slate-600"
+            >
+              <div class="flex items-center justify-between">
+                <h5 class="font-semibold text-sm">Web developer • Freelance</h5>
+                <span class="text-xs">March 2018 - March 2022</span>
+              </div>
+              <p class="text-xs text-slate-600 dark:text-gray-300">
+                React, Django, Next JS
+              </p>
+            </div>
+            <div
+              class="flex flex-col gap-2 p-4 bg-green-50 dark:bg-green-900 rounded border border-slate-300 dark:border-slate-600"
+            >
+              <div class="flex items-center justify-between">
+                <h5 class="font-semibold text-sm">
+                  Shopify developer • Final Apps
+                </h5>
+                <span class="text-xs">April 2022 - December 2025</span>
+              </div>
+              <p class="text-xs text-slate-600 dark:text-gray-300">
+                React, Nest JS, Remix
+              </p>
+            </div>
+            <div
+              class="flex flex-col gap-2 p-4 bg-green-100 dark:bg-green-950 rounded border border-slate-300 dark:border-slate-600"
+            >
+              <div class="flex items-center justify-between">
+                <h5 class="font-semibold text-sm">
+                  Product engineer • Accurate Saudi
+                </h5>
+                <span class="text-xs">December 2025 - Now</span>
+              </div>
+              <p class="text-xs text-slate-600 dark:text-gray-300">
+                ERP, Odoo, AWS
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div class="h-[1px] bg-slate-200 dark:bg-gray-700"></div>
+
+        <div
+          class="flex flex-col gap-4 text-sm leading-6 font-medium dark:font-normal dark:text-white relative"
+        >
+          <span
+            class="font-bold text-purple-700 md:absolute md:top-0 md:left-[-20px] md:translate-x-[-100%] dark:text-purple-400"
+          >
+            ✨ Projects
+          </span>
+          <p>
+            Designing and developing
+            <span
+              class="bg-purple-100 px-1 rounded border border-purple-300 text-slate-600 italic dark:border-purple-800 dark:bg-purple-950 dark:text-gray-300"
+              >static websites</span
+            >
+            was the primary gigs I could handle when I started freelancing web
+            development. One of my friends' brother had an
+            <span
+              class="bg-purple-100 px-1 rounded border border-purple-300 text-slate-600 italic dark:border-purple-800 dark:bg-purple-950 dark:text-gray-300"
+              >ERP</span
+            >
+            development company and they out-sourced web development projects,
+            of which I ended up the main contender.
+          </p>
+          <p>
+            Eventually, I got a project from a start-up which was a
+            <span
+              class="bg-purple-100 px-1 rounded border border-purple-300 text-slate-600 italic dark:border-purple-800 dark:bg-purple-950 dark:text-gray-300"
+              >web app</span
+            >
+            with almost
+            <span
+              class="bg-purple-100 px-1 rounded border border-purple-300 text-slate-600 italic dark:border-purple-800 dark:bg-purple-950 dark:text-gray-300"
+              >3K+ users</span
+            >, I could complete it in a few months which is running flawlessly
+            until now. Still building projects to solve problems of my own or
+            faced by others.
+          </p>
+          <p>
+            Listing out some of my
+            <span
+              class="bg-purple-100 px-1 rounded border border-purple-300 text-slate-600 italic dark:border-purple-800 dark:bg-purple-950 dark:text-gray-300"
+              >popular projects</span
+            >
+            :
+          </p>
+
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div
+              class="flex flex-col items-stretch gap-4 p-3 bg-green-100 border border-slate-300 w-auto rounded dark:bg-green-900 dark:border-slate-600"
+            >
+              <div
+                class="h-[150px] bg-black rounded border border-slate-300 dark:border-slate-600"
+                style="background: url(assets/projects/farmfills.png); background-size: cover"
+              ></div>
+              <div class="flex flex-col gap-2 flex-1 justify-between">
+                <h4 class="font-bold text-md">Farmfills</h4>
+                <ul class="list-disc gap-2 flex flex-col pl-4">
+                  <li class="text-xs">
+                    A web app for subscribing dairy products delivery
+                  </li>
+                  <li class="text-xs">
+                    Customers, admin, delivery, dispatch portals
+                  </li>
+                  <li class="text-xs">Payment integration with Razor pay</li>
+                  <li class="text-xs">One time password login</li>
+                </ul>
+                <div
+                  class="flex gap-4 text-xs text-blue-600 underline dark:text-blue-300"
+                >
+                  <a href="https://farmfills.com/" class="flex">
+                    webpage
+                    <svg
+                      class="w-3"
+                      xmlns="http://www.w3.org/2000/svg"
+                      viewBox="0 0 20 20"
+                      fill="currentColor"
+                    >
+                      <path
+                        fill-rule="evenodd"
+                        d="M5.22 14.78a.75.75 0 0 0 1.06 0l7.22-7.22v5.69a.75.75 0 0 0 1.5 0v-7.5a.75.75 0 0 0-.75-.75h-7.5a.75.75 0 0 0 0 1.5h5.69l-7.22 7.22a.75.75 0 0 0 0 1.06Z"
+                        clip-rule="evenodd"
+                      />
+                    </svg>
+                  </a>
+                  <a
+                    href="https://github.com/pulimoodan/farmfills-app"
+                    class="flex"
+                  >
+                    github
+                    <svg
+                      class="w-3"
+                      xmlns="http://www.w3.org/2000/svg"
+                      viewBox="0 0 20 20"
+                      fill="currentColor"
+                    >
+                      <path
+                        fill-rule="evenodd"
+                        d="M5.22 14.78a.75.75 0 0 0 1.06 0l7.22-7.22v5.69a.75.75 0 0 0 1.5 0v-7.5a.75.75 0 0 0-.75-.75h-7.5a.75.75 0 0 0 0 1.5h5.69l-7.22 7.22a.75.75 0 0 0 0 1.06Z"
+                        clip-rule="evenodd"
+                      />
+                    </svg>
+                  </a>
+                </div>
+              </div>
+            </div>
+
+            <div
+              class="flex flex-col items-stretch gap-4 p-3 bg-green-100 border border-slate-300 w-auto rounded dark:bg-green-900 dark:border-slate-600"
+            >
+              <div
+                class="h-[150px] bg-black rounded border border-slate-300 dark:border-slate-600"
+                style="background: url(assets/projects/publiso.png); background-size: cover"
+              ></div>
+              <div class="flex flex-col gap-2 flex-1 justify-between">
+                <h4 class="font-bold text-md">Publiso</h4>
+                <ul class="list-disc gap-2 flex flex-col pl-4">
+                  <li class="text-xs">A web app for reading popular e-books</li>
+                  <li class="text-xs">Users can follow authors</li>
+                  <li class="text-xs">Payment integration with Razor pay</li>
+                  <li class="text-xs">Reading feature without losing PDF</li>
+                </ul>
+                <div
+                  class="flex gap-4 text-xs text-blue-600 underline dark:text-blue-300"
+                >
+                  <a href="https://publiso.akbrews.com/" class="flex">
+                    webpage
+                    <svg
+                      class="w-3"
+                      xmlns="http://www.w3.org/2000/svg"
+                      viewBox="0 0 20 20"
+                      fill="currentColor"
+                    >
+                      <path
+                        fill-rule="evenodd"
+                        d="M5.22 14.78a.75.75 0 0 0 1.06 0l7.22-7.22v5.69a.75.75 0 0 0 1.5 0v-7.5a.75.75 0 0 0-.75-.75h-7.5a.75.75 0 0 0 0 1.5h5.69l-7.22 7.22a.75.75 0 0 0 0 1.06Z"
+                        clip-rule="evenodd"
+                      />
+                    </svg>
+                  </a>
+                  <a href="https://github.com/pulimoodan/publiso" class="flex">
+                    github
+                    <svg
+                      class="w-3"
+                      xmlns="http://www.w3.org/2000/svg"
+                      viewBox="0 0 20 20"
+                      fill="currentColor"
+                    >
+                      <path
+                        fill-rule="evenodd"
+                        d="M5.22 14.78a.75.75 0 0 0 1.06 0l7.22-7.22v5.69a.75.75 0 0 0 1.5 0v-7.5a.75.75 0 0 0-.75-.75h-7.5a.75.75 0 0 0 0 1.5h5.69l-7.22 7.22a.75.75 0 0 0 0 1.06Z"
+                        clip-rule="evenodd"
+                      />
+                    </svg>
+                  </a>
+                </div>
+              </div>
+            </div>
+
+            <div
+              class="flex flex-col items-stretch gap-4 p-3 bg-green-100 border border-slate-300 w-auto rounded dark:bg-green-900 dark:border-slate-600"
+            >
+              <div
+                class="h-[150px] bg-black rounded border border-slate-300 dark:border-slate-600"
+                style="background: url(assets/projects/chali.png); background-size: cover"
+              ></div>
+              <div class="flex flex-col gap-2 flex-1 justify-between">
+                <h4 class="font-bold text-md">Chali</h4>
+                <ul class="list-disc gap-2 flex flex-col pl-4">
+                  <li class="text-xs">
+                    A web app for sharing and reacting jokes
+                  </li>
+                  <li class="text-xs">
+                    Users can follow each other and edit profile
+                  </li>
+                  <li class="text-xs">Bookmark, trending pages</li>
+                  <li class="text-xs">
+                    Notification system for reactions, comments
+                  </li>
+                </ul>
+                <div
+                  class="flex gap-4 text-xs text-blue-600 underline dark:text-blue-300"
+                >
+                  <a href="https://chali.akbrews.com/" class="flex">
+                    webpage
+                    <svg
+                      class="w-3"
+                      xmlns="http://www.w3.org/2000/svg"
+                      viewBox="0 0 20 20"
+                      fill="currentColor"
+                    >
+                      <path
+                        fill-rule="evenodd"
+                        d="M5.22 14.78a.75.75 0 0 0 1.06 0l7.22-7.22v5.69a.75.75 0 0 0 1.5 0v-7.5a.75.75 0 0 0-.75-.75h-7.5a.75.75 0 0 0 0 1.5h5.69l-7.22 7.22a.75.75 0 0 0 0 1.06Z"
+                        clip-rule="evenodd"
+                      />
+                    </svg>
+                  </a>
+                  <a href="https://github.com/pulimoodan/Chali" class="flex">
+                    github
+                    <svg
+                      class="w-3"
+                      xmlns="http://www.w3.org/2000/svg"
+                      viewBox="0 0 20 20"
+                      fill="currentColor"
+                    >
+                      <path
+                        fill-rule="evenodd"
+                        d="M5.22 14.78a.75.75 0 0 0 1.06 0l7.22-7.22v5.69a.75.75 0 0 0 1.5 0v-7.5a.75.75 0 0 0-.75-.75h-7.5a.75.75 0 0 0 0 1.5h5.69l-7.22 7.22a.75.75 0 0 0 0 1.06Z"
+                        clip-rule="evenodd"
+                      />
+                    </svg>
+                  </a>
+                </div>
+              </div>
+            </div>
+
+            <div
+              class="flex flex-col items-stretch gap-4 p-3 bg-green-100 border border-slate-300 w-auto rounded dark:bg-green-900 dark:border-slate-600"
+            >
+              <div
+                class="h-[150px] bg-black rounded border border-slate-300 dark:border-slate-600"
+                style="background: url(assets/projects/thisorthat.png); background-size: cover"
+              ></div>
+              <div class="flex flex-col gap-2 flex-1 justify-between">
+                <h4 class="font-bold text-md">This or that</h4>
+                <ul class="list-disc gap-2 flex flex-col pl-4">
+                  <li class="text-xs">
+                    A web app for choosing the favourite from an image group
+                  </li>
+                  <li class="text-xs">Choose multiple images</li>
+                  <li class="text-xs">Restart poll after showing the result</li>
+                  <li class="text-xs">
+                    Start a new poll after showing the result
+                  </li>
+                </ul>
+                <div
+                  class="flex gap-4 text-xs text-blue-600 underline dark:text-blue-300"
+                >
+                  <a
+                    href="https://pulimoodan.github.io/This-or-that/"
+                    class="flex"
+                  >
+                    webpage
+                    <svg
+                      class="w-3"
+                      xmlns="http://www.w3.org/2000/svg"
+                      viewBox="0 0 20 20"
+                      fill="currentColor"
+                    >
+                      <path
+                        fill-rule="evenodd"
+                        d="M5.22 14.78a.75.75 0 0 0 1.06 0l7.22-7.22v5.69a.75.75 0 0 0 1.5 0v-7.5a.75.75 0 0 0-.75-.75h-7.5a.75.75 0 0 0 0 1.5h5.69l-7.22 7.22a.75.75 0 0 0 0 1.06Z"
+                        clip-rule="evenodd"
+                      />
+                    </svg>
+                  </a>
+                  <a
+                    href="https://github.com/pulimoodan/This-or-that"
+                    class="flex"
+                  >
+                    github
+                    <svg
+                      class="w-3"
+                      xmlns="http://www.w3.org/2000/svg"
+                      viewBox="0 0 20 20"
+                      fill="currentColor"
+                    >
+                      <path
+                        fill-rule="evenodd"
+                        d="M5.22 14.78a.75.75 0 0 0 1.06 0l7.22-7.22v5.69a.75.75 0 0 0 1.5 0v-7.5a.75.75 0 0 0-.75-.75h-7.5a.75.75 0 0 0 0 1.5h5.69l-7.22 7.22a.75.75 0 0 0 0 1.06Z"
+                        clip-rule="evenodd"
+                      />
+                    </svg>
+                  </a>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="h-[1px] bg-slate-200 dark:bg-gray-700"></div>
+
+        <div
+          class="flex flex-col gap-4 text-sm leading-6 font-medium dark:font-normal dark:text-white relative text-center text-xs"
+        >
+          <p>
+            Handcrafted by
+            <span class="text-blue-600 dark:text-blue-300">Akbar Ali</span>
+            with
+            <a
+              href="https://tailwindcss.com/"
+              class="text-blue-600 underline dark:text-blue-300"
+            >
+              tailwind css
+            </a>
+            . Inspired from
+            <a
+              href="https://leerob.io/"
+              class="text-blue-600 underline dark:text-blue-300"
+            >
+              leerob.io
+            </a>
+            . <br />
+            <span class="text-slate-400">Last updated - July 2026</span>
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      const sunIcon = document.getElementById("sun-icon");
+      const moonIcon = document.getElementById("moon-icon");
+
+      function applyTheme(dark) {
+        document.body.classList.toggle("dark", dark);
+        sunIcon.classList.toggle("hidden", !dark);
+        moonIcon.classList.toggle("hidden", dark);
+      }
+
+      applyTheme(localStorage.getItem("theme") === "dark");
+
+      document
+        .getElementById("dark-toggle")
+        .addEventListener("click", function () {
+          const dark = !document.body.classList.contains("dark");
+          localStorage.setItem("theme", dark ? "dark" : "light");
+          applyTheme(dark);
+        });
+
+      const arrowIcon =
+        '<svg class="w-5 inline text-blue-600 dark:text-blue-300" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.22 14.78a.75.75 0 0 0 1.06 0l7.22-7.22v5.69a.75.75 0 0 0 1.5 0v-7.5a.75.75 0 0 0-.75-.75h-7.5a.75.75 0 0 0 0 1.5h5.69l-7.22 7.22a.75.75 0 0 0 0 1.06Z" clip-rule="evenodd" /></svg>';
+
+      async function fetchPosts() {
+        try {
+          const res = await fetch(
+            "https://dev.to/api/articles?username=pulimoodan&per_page=4"
+          );
+          const posts = await res.json();
+          const container = document.getElementById("posts");
+          container.innerHTML = "";
+          for (const post of posts) {
+            const card = document.createElement("a");
+            card.href = post.url;
+            card.className =
+              "flex flex-col gap-2 p-2 bg-green-100 border border-slate-300 w-auto rounded dark:bg-green-900 dark:border-slate-600";
+
+            const img = document.createElement("img");
+            img.src = post.cover_image || post.social_image;
+            img.alt = "Header image";
+            img.className = "h-[80px] rounded";
+
+            const heading = document.createElement("h4");
+            heading.className = "font-bold text-sm";
+            heading.textContent = post.title;
+
+            const description = document.createElement("p");
+            description.className = "font-medium dark:font-normal text-xs";
+            description.textContent = (post.description || "").slice(0, 80);
+            description.insertAdjacentHTML("beforeend", " " + arrowIcon);
+
+            card.append(img, heading, description);
+            container.appendChild(card);
+          }
+        } catch (error) {
+          console.error("Failed to load blog posts", error);
+        }
+      }
+
+      fetchPosts();
+    </script>
+  </body>
+</html>
