@@ -561,23 +561,26 @@
   // there's no jump when you grab a new side mid-tilt — you're just leaning further off wherever
   // she already was.
   let pointerTilt = 0, keyL = false, keyR = false;
-  let dragging = false, dragSide = 1, dragStartY = 0, dragStartTilt = 0;
+  let dragging = false, dragSide = 1, dragStartY = 0, dragStartTilt = 0, dragTouch = false;
   function inputTilt() {
     if (keyL) return -T.maxTilt;
     if (keyR) return T.maxTilt;
     return pointerTilt;
   }
-  function beginDrag(clientX, clientY) {
+  function beginDrag(clientX, clientY, isTouch) {
     const r = cvs.getBoundingClientRect();
     dragSide = (clientX - r.left - r.width / 2) >= 0 ? 1 : -1;
     dragStartY = clientY;
     dragStartTilt = pointerTilt;
+    dragTouch = !!isTouch;
     dragging = true;
   }
   function updateDrag(clientY) {
     if (!dragging) return;
     const r = cvs.getBoundingClientRect();
-    const range = Math.max(80, r.height * 0.5);   // px of vertical pull to swing from here to the limit
+    // A thumb can't sweep as far as a mouse, so touch gets a much shorter throw to hit full
+    // tilt — otherwise the drag reads as sluggish on a tall phone screen.
+    const range = Math.max(80, r.height * (dragTouch ? 0.22 : 0.5));
     const dy = clientY - dragStartY;
     pointerTilt = clamp(dragStartTilt + dragSide * (dy / range) * T.maxTilt, -T.maxTilt, T.maxTilt);
   }
@@ -586,7 +589,7 @@
     ac();
     if (state === MENU) { startRun(); return; }
     if (state === DEAD) { if (performance.now() - deadAt > 800) { buildMenu(); startRun(); } return; }
-    if (state === PLAY && typeof e.clientY === 'number') beginDrag(e.clientX, e.clientY);
+    if (state === PLAY && typeof e.clientY === 'number') beginDrag(e.clientX, e.clientY, e.pointerType !== 'mouse');
   }
   const band = document.getElementById('band');
   const debugEl = document.getElementById('debug');
