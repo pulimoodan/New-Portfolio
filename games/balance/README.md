@@ -29,10 +29,10 @@ One file, so any of these takes about a minute:
 
 ## Controls
 
-- **Desktop** — drag or move the mouse left/right to trim the boat. Arrow keys (or `A`/`D`)
-  heel her fully one way. `Space` casts off and sails again.
-- **Mobile** — drag across the screen to trim. If your device reports orientation, stop
-  dragging and it hands over to **tilt-to-balance** — physically tip the phone to trim.
+- **Desktop / mobile** — grab a side of the boat and drag vertically: press the left half and
+  pull down to dip it, the right half to work that side instead. The drag is relative to
+  wherever the tilt already sat, so grabbing a new side mid-lean doesn't jerk the boat back to
+  level first. Arrow keys (or `A`/`D`) heel her fully one way. `Space` casts off and sails again.
 
 ## The mechanic
 

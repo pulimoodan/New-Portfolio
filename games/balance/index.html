@@ -555,30 +555,38 @@
   }
 
   // ---------- input ----------
-  let pointerTilt = 0, lastPointer = -1e9, keyL = false, keyR = false;
-  let orientActive = false, gamma0 = null, gammaNow = 0;
+  // Grab a side of the boat and drag: press near the left half and she trims toward however
+  // far down you pull; press the right half and you're working that side instead. The drag is
+  // relative to where the tilt already sat, not to your finger's absolute screen position, so
+  // there's no jump when you grab a new side mid-tilt — you're just leaning further off wherever
+  // she already was.
+  let pointerTilt = 0, keyL = false, keyR = false;
+  let dragging = false, dragSide = 1, dragStartY = 0, dragStartTilt = 0;
   function inputTilt() {
     if (keyL) return -T.maxTilt;
     if (keyR) return T.maxTilt;
-    // Tilt-to-balance takes over on mobile only once you stop dragging the screen.
-    if (orientActive && gamma0 !== null && performance.now() - lastPointer > 1000)
-      return clamp((gammaNow - gamma0) / 22, -1, 1) * T.maxTilt;
     return pointerTilt;
   }
-  function setPointerTilt(clientX) {
+  function beginDrag(clientX, clientY) {
     const r = cvs.getBoundingClientRect();
-    pointerTilt = clamp((clientX - r.left - r.width / 2) / (r.width * 0.42), -1, 1) * T.maxTilt;
-    lastPointer = performance.now();
+    dragSide = (clientX - r.left - r.width / 2) >= 0 ? 1 : -1;
+    dragStartY = clientY;
+    dragStartTilt = pointerTilt;
+    dragging = true;
   }
+  function updateDrag(clientY) {
+    if (!dragging) return;
+    const r = cvs.getBoundingClientRect();
+    const range = Math.max(80, r.height * 0.5);   // px of vertical pull to swing from here to the limit
+    const dy = clientY - dragStartY;
+    pointerTilt = clamp(dragStartTilt + dragSide * (dy / range) * T.maxTilt, -T.maxTilt, T.maxTilt);
+  }
+  function endDrag() { dragging = false; }
   function press(e) {
     ac();
-    // iOS needs a gesture before it will hand over orientation.
-    if (typeof DeviceOrientationEvent !== 'undefined' && DeviceOrientationEvent.requestPermission) {
-      DeviceOrientationEvent.requestPermission().catch(() => {});
-    }
     if (state === MENU) { startRun(); return; }
     if (state === DEAD) { if (performance.now() - deadAt > 800) { buildMenu(); startRun(); } return; }
-    if (state === PLAY) setPointerTilt(e.clientX);
+    if (state === PLAY && typeof e.clientY === 'number') beginDrag(e.clientX, e.clientY);
   }
   const band = document.getElementById('band');
   const debugEl = document.getElementById('debug');
@@ -586,7 +594,9 @@
   if (!DEBUG) debugEl.remove();   // no hitbox toggle in production
   const overBand = (e) => e.target instanceof Node && (band.contains(e.target) || debugEl.contains(e.target));
   window.addEventListener('pointerdown', (e) => { if (overBand(e)) return; e.preventDefault(); press(e); }, { passive: false });
-  window.addEventListener('pointermove', (e) => { if (state === PLAY && (e.buttons || e.pointerType !== 'mouse')) setPointerTilt(e.clientX); });
+  window.addEventListener('pointermove', (e) => { if (state === PLAY) updateDrag(e.clientY); });
+  window.addEventListener('pointerup', endDrag);
+  window.addEventListener('pointercancel', endDrag);
   window.addEventListener('contextmenu', (e) => e.preventDefault());
   window.addEventListener('keydown', (e) => {
     if (e.code === 'ArrowLeft' || e.code === 'KeyA') keyL = true;
@@ -596,11 +606,6 @@
   window.addEventListener('keyup', (e) => {
     if (e.code === 'ArrowLeft' || e.code === 'KeyA') keyL = false;
     if (e.code === 'ArrowRight' || e.code === 'KeyD') keyR = false;
-  });
-  window.addEventListener('deviceorientation', (e) => {
-    if (e.gamma === null || e.gamma === undefined) return;
-    orientActive = true; gammaNow = e.gamma;
-    if (gamma0 === null) gamma0 = e.gamma;   // calibrate neutral to however you're holding it
   });
 
   // ---------- update ----------
@@ -1022,7 +1027,7 @@
       type('COMBO  x' + (1 + combo * T.comboStep).toFixed(2), W - 26, 84, GOLD, 12, 700, 1, 'right');
     }
     // control hint fades once she's carrying a few pieces
-    if (height < 3) type('DRAG / TILT TO TRIM', W / 2, H - 22, ink(0.34), 10, 700, 2);
+    if (height < 3) type('DRAG A SIDE TO TRIM', W / 2, H - 22, ink(0.34), 10, 700, 2);
   }
 
   function drawMenu() {
@@ -1030,7 +1035,7 @@
     type('BALANCE', W / 2, cy, ink(0.93), 56, 800, 8);
     hairline(cy + 32, 250, 0.14);
     type('LOAD THE BOAT  ·  KEEP THE CARGO SAFE', W / 2, cy + 54, ink(0.42), 10, 700, 2);
-    type('DRAG TO TRIM AS THE CARGO STACKS UP', W / 2, cy + 74, ink(0.42), 10, 700, 2);
+    type('DRAG A SIDE TO TRIM AS THE CARGO STACKS UP', W / 2, cy + 74, ink(0.42), 10, 700, 2);
     if (blink()) type('PRESS TO CAST OFF', W / 2, cy + 120, ink(0.85), 13, 800, 3);
     if (best > 0) type('BEST HAUL  ' + best, W / 2, H - 30, ink(0.3), 10, 700, 2);
   }
