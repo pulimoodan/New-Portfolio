@@ -1,0 +1,18 @@
+[
+  {
+    "slug": "balloon",
+    "title": "Pressure",
+    "tagline": "hold to inflate · release to bank",
+    "emoji": "🎈",
+    "gradient": "linear-gradient(135deg, #b45309, #7c2d12)",
+    "line": "A one-button arcade game about greed and knowing when to stop."
+  },
+  {
+    "slug": "balance",
+    "title": "Balance",
+    "tagline": "keep the cargo aboard",
+    "emoji": "⛵",
+    "gradient": "linear-gradient(135deg, #0e7490, #164e63)",
+    "line": "A one-input physics game about trimming a boat and your nerves."
+  }
+]

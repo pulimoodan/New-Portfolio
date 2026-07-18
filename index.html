@@ -25,13 +25,71 @@
         },
       };
     </script>
+    <style>
+      html {
+        scroll-behavior: smooth;
+      }
+      body {
+        background-color: #faf9f7;
+      }
+      html.dark body,
+      body.dark {
+        background-color: #1a1917;
+      }
+      #scroll-progress {
+        transform-origin: left;
+        transform: scaleX(0);
+      }
+      .reveal {
+        opacity: 0;
+        transform: translateY(14px);
+        transition: opacity 0.6s ease, transform 0.6s ease;
+      }
+      .reveal.in-view {
+        opacity: 1;
+        transform: translateY(0);
+      }
+      .link-underline {
+        background-image: linear-gradient(currentColor, currentColor);
+        background-position: 0 100%;
+        background-repeat: no-repeat;
+        background-size: 0% 1px;
+        transition: background-size 0.3s ease;
+      }
+      .link-underline:hover {
+        background-size: 100% 1px;
+      }
+      .divider-fade {
+        background: linear-gradient(
+          to right,
+          transparent,
+          rgb(231 229 228) 50%,
+          transparent
+        );
+      }
+      .dark .divider-fade {
+        background: linear-gradient(
+          to right,
+          transparent,
+          rgb(68 64 60) 50%,
+          transparent
+        );
+      }
+    </style>
   </head>
   <body>
-    <div id="wrapper" class="bg-white dark:bg-zinc-900 relative min-h-screen">
+    <div
+      id="scroll-progress"
+      class="fixed top-0 left-0 h-[2px] w-full bg-amber-600 dark:bg-amber-500 z-50"
+    ></div>
+    <div
+      id="wrapper"
+      class="bg-[#faf9f7] dark:bg-[#1a1917] relative min-h-screen transition-colors duration-300"
+    >
       <button
         id="dark-toggle"
         aria-label="Toggle dark mode"
-        class="w-8 h-8 flex items-center justify-center border border-slate-300 dark:border-slate-600 dark:text-white rounded fixed top-4 right-4"
+        class="w-8 h-8 flex items-center justify-center border border-stone-200 dark:border-stone-700 dark:text-white rounded fixed top-4 right-4 backdrop-blur bg-[#faf9f7]/70 dark:bg-[#1a1917]/70 transition-transform hover:scale-105 z-40"
       >
         <svg
           id="sun-icon"
@@ -74,60 +132,76 @@
 
         <div class="flex items-center gap-3 text-sm flex-wrap">
           <div
-            class="rounded bg-lime-200 border border-slate-300 px-3 py-1 font-medium dark:border-slate-600 dark:bg-lime-300"
+            class="rounded bg-amber-100 border border-amber-200 px-3 py-1 font-medium text-amber-900 dark:border-amber-800/40 dark:bg-amber-950/50 dark:text-amber-200 transition-transform duration-200 hover:-translate-y-0.5"
           >
             Web Developer
           </div>
           <div
-            class="rounded bg-lime-200 border border-slate-300 px-3 py-1 font-medium dark:border-slate-600 dark:bg-lime-300"
+            class="rounded bg-amber-100 border border-amber-200 px-3 py-1 font-medium text-amber-900 dark:border-amber-800/40 dark:bg-amber-950/50 dark:text-amber-200 transition-transform duration-200 hover:-translate-y-0.5"
           >
             UX Designer
           </div>
           <div
-            class="rounded bg-lime-200 border border-slate-300 px-3 py-1 font-medium dark:border-slate-600 dark:bg-lime-300"
+            class="rounded bg-amber-100 border border-amber-200 px-3 py-1 font-medium text-amber-900 dark:border-amber-800/40 dark:bg-amber-950/50 dark:text-amber-200 transition-transform duration-200 hover:-translate-y-0.5"
           >
             Writer
           </div>
         </div>
 
-        <div class="relative gap-4 flex flex-col">
+        <div class="relative gap-4 flex flex-col reveal">
           <span
-            class="font-bold text-purple-700 md:absolute md:top-0 md:left-[-20px] md:translate-x-[-100%] dark:text-purple-400"
+            class="font-bold text-amber-700 md:absolute md:top-0 md:left-[-20px] md:translate-x-[-100%] dark:text-amber-500"
           >
             ✨ About
           </span>
           <div class="flex items-center gap-3 text-sm flex-wrap">
-            <img
-              src="assets/images/1.jpg"
-              alt="Portrait 0"
-              class="h-[170px] rounded-md border border-slate-300 dark:border-slate-600"
-            />
-            <img
-              src="assets/images/2.jpg"
-              alt="Portrait 1"
-              class="h-[170px] rounded-md border border-slate-300 dark:border-slate-600"
-            />
-            <img
-              src="assets/images/3.jpg"
-              alt="Portrait 2"
-              class="h-[170px] rounded-md border border-slate-300 dark:border-slate-600"
-            />
-            <img
-              src="assets/images/4.jpg"
-              alt="Portrait 3"
-              class="h-[170px] rounded-md border border-slate-300 dark:border-slate-600"
-            />
+            <div
+              class="h-[170px] w-[130px] rounded-md border border-stone-200 dark:border-stone-700 overflow-hidden"
+            >
+              <img
+                src="assets/images/1.jpg"
+                alt="Portrait 0"
+                class="h-full w-full object-cover transition-transform duration-300 hover:scale-110"
+              />
+            </div>
+            <div
+              class="h-[170px] w-[130px] rounded-md border border-stone-200 dark:border-stone-700 overflow-hidden"
+            >
+              <img
+                src="assets/images/2.jpg"
+                alt="Portrait 1"
+                class="h-full w-full object-cover transition-transform duration-300 hover:scale-110"
+              />
+            </div>
+            <div
+              class="h-[170px] w-[130px] rounded-md border border-stone-200 dark:border-stone-700 overflow-hidden"
+            >
+              <img
+                src="assets/images/3.jpg"
+                alt="Portrait 2"
+                class="h-full w-full object-cover transition-transform duration-300 hover:scale-110"
+              />
+            </div>
+            <div
+              class="h-[170px] w-[130px] rounded-md border border-stone-200 dark:border-stone-700 overflow-hidden"
+            >
+              <img
+                src="assets/images/4.jpg"
+                alt="Portrait 3"
+                class="h-full w-full object-cover transition-transform duration-300 hover:scale-110"
+              />
+            </div>
           </div>
         </div>
 
         <div
-          class="flex flex-col gap-4 text-sm leading-6 font-medium dark:font-normal dark:text-white relative"
+          class="flex flex-col gap-4 text-sm leading-6 font-medium dark:font-normal dark:text-white relative reveal"
         >
           <p>
             Started from my high school, curious about games and computers,
             I've tried everything found interesting to me until I realized that
             <span
-              class="bg-purple-100 px-1 rounded border border-purple-300 text-slate-600 italic dark:border-purple-800 dark:bg-purple-950 dark:text-gray-300"
+              class="bg-amber-100/60 px-1 rounded border border-amber-200 text-stone-700 italic dark:border-amber-900/40 dark:bg-amber-950/40 dark:text-amber-100/90"
               >web development</span
             >
             is my favourite ⭐.
@@ -135,12 +209,12 @@
           <p>
             I was doing
             <span
-              class="bg-purple-100 px-1 rounded border border-purple-300 text-slate-600 italic dark:border-purple-800 dark:bg-purple-950 dark:text-gray-300"
+              class="bg-amber-100/60 px-1 rounded border border-amber-200 text-stone-700 italic dark:border-amber-900/40 dark:bg-amber-950/40 dark:text-amber-100/90"
               >freelance</span
             >
             web designing and development ⌨️ (mostly static websites) during my
             <span
-              class="bg-purple-100 px-1 rounded border border-purple-300 text-slate-600 italic dark:border-purple-800 dark:bg-purple-950 dark:text-gray-300"
+              class="bg-amber-100/60 px-1 rounded border border-amber-200 text-stone-700 italic dark:border-amber-900/40 dark:bg-amber-950/40 dark:text-amber-100/90"
               >high school</span
             >, to buy my first personal computer 🖥️ and accessories. Yes, I've
             learnt web development with my old smartphone 📱 and eventually my
@@ -148,13 +222,13 @@
           </p>
           <p>
             <span
-              class="bg-purple-100 px-1 rounded border border-purple-300 text-slate-600 italic dark:border-purple-800 dark:bg-purple-950 dark:text-gray-300"
+              class="bg-amber-100/60 px-1 rounded border border-amber-200 text-stone-700 italic dark:border-amber-900/40 dark:bg-amber-950/40 dark:text-amber-100/90"
               >Game development</span
             >
             🎮 was the main attraction for me to get into technologies and
             still I'm trying out things and making games as a
             <span
-              class="bg-purple-100 px-1 rounded border border-purple-300 text-slate-600 italic dark:border-purple-800 dark:bg-purple-950 dark:text-gray-300"
+              class="bg-amber-100/60 px-1 rounded border border-amber-200 text-stone-700 italic dark:border-amber-900/40 dark:bg-amber-950/40 dark:text-amber-100/90"
               >hobby</span
             >
             (I must say, I'm not an expert).
@@ -162,7 +236,7 @@
           <p>
             Useful
             <span
-              class="bg-purple-100 px-1 rounded border border-purple-300 text-slate-600 italic dark:border-purple-800 dark:bg-purple-950 dark:text-gray-300"
+              class="bg-amber-100/60 px-1 rounded border border-amber-200 text-stone-700 italic dark:border-amber-900/40 dark:bg-amber-950/40 dark:text-amber-100/90"
               >links</span
             >
             :
@@ -172,7 +246,7 @@
             <a
               href="https://medium.com/@pulimoodan"
               target="_blank"
-              class="text-blue-600 underline flex items-center gap-1 dark:text-blue-300"
+              class="text-amber-700 flex items-center gap-1 dark:text-amber-400 link-underline"
             >
               <img
                 src="assets/icons/medium.png"
@@ -198,7 +272,7 @@
             <a
               href="https://www.twitter.com/pulimoodanhere"
               target="_blank"
-              class="text-blue-600 underline flex items-center gap-1 dark:text-blue-300"
+              class="text-amber-700 flex items-center gap-1 dark:text-amber-400 link-underline"
             >
               <img
                 src="assets/icons/twitter.png"
@@ -224,7 +298,7 @@
             <a
               href="https://www.linkedin.com/in/pulimoodan"
               target="_blank"
-              class="text-blue-600 underline flex items-center gap-1 dark:text-blue-300"
+              class="text-amber-700 flex items-center gap-1 dark:text-amber-400 link-underline"
             >
               <img
                 src="assets/icons/linkedin.png"
@@ -250,7 +324,7 @@
             <a
               href="https://www.github.com/pulimoodan"
               target="_blank"
-              class="text-blue-600 underline flex items-center gap-1 dark:text-blue-300"
+              class="text-amber-700 flex items-center gap-1 dark:text-amber-400 link-underline"
             >
               <img
                 src="assets/icons/github.png"
@@ -276,7 +350,7 @@
             <a
               href="mailto:akbaraliongo@gmail.com"
               target="_blank"
-              class="text-blue-600 underline flex items-center gap-1 dark:text-blue-300"
+              class="text-amber-700 flex items-center gap-1 dark:text-amber-400 link-underline"
             >
               <img
                 src="assets/icons/mail.png"
@@ -302,31 +376,31 @@
           </div>
         </div>
 
-        <div class="h-[1px] bg-slate-200 dark:bg-gray-700"></div>
+        <div class="h-[1px] divider-fade"></div>
 
         <div
-          class="flex flex-col gap-4 text-sm leading-6 font-medium dark:font-normal dark:text-white relative"
+          class="flex flex-col gap-4 text-sm leading-6 font-medium dark:font-normal dark:text-white relative reveal"
         >
           <span
-            class="font-bold text-purple-700 md:absolute md:top-0 md:left-[-20px] md:translate-x-[-100%] dark:text-purple-400"
+            class="font-bold text-amber-700 md:absolute md:top-0 md:left-[-20px] md:translate-x-[-100%] dark:text-amber-500"
           >
             ✨ Skills
           </span>
           <p>
             New
             <span
-              class="bg-purple-100 px-1 rounded border border-purple-300 text-slate-600 italic dark:border-purple-800 dark:bg-purple-950 dark:text-gray-300"
+              class="bg-amber-100/60 px-1 rounded border border-amber-200 text-stone-700 italic dark:border-amber-900/40 dark:bg-amber-950/40 dark:text-amber-100/90"
               >tech stacks</span
             >
             and
             <span
-              class="bg-purple-100 px-1 rounded border border-purple-300 text-slate-600 italic dark:border-purple-800 dark:bg-purple-950 dark:text-gray-300"
+              class="bg-amber-100/60 px-1 rounded border border-amber-200 text-stone-700 italic dark:border-amber-900/40 dark:bg-amber-950/40 dark:text-amber-100/90"
               >tools</span
             >
             always drive me curious. I try to learn and test new technologies
             pop up in the market. Here are my
             <span
-              class="bg-purple-100 px-1 rounded border border-purple-300 text-slate-600 italic dark:border-purple-800 dark:bg-purple-950 dark:text-gray-300"
+              class="bg-amber-100/60 px-1 rounded border border-amber-200 text-stone-700 italic dark:border-amber-900/40 dark:bg-amber-950/40 dark:text-amber-100/90"
               >favourites</span
             >
             :
@@ -334,31 +408,31 @@
 
           <div class="flex gap-4 items-center flex-wrap">
             <div
-              class="flex items-center gap-2 px-4 py-2 bg-green-100 rounded border border-slate-300 dark:border-slate-600 dark:bg-green-900"
+              class="flex items-center gap-2 px-4 py-2 bg-stone-100 rounded-lg border border-stone-200 dark:border-stone-700 dark:bg-stone-800/50 transition-colors duration-200 hover:border-amber-300 dark:hover:border-amber-700/50"
             >
               <img src="assets/icons/react.png" alt="Skill icon" class="h-6" />
               <span>React</span>
             </div>
             <div
-              class="flex items-center gap-2 px-4 py-2 bg-green-100 rounded border border-slate-300 dark:border-slate-600 dark:bg-green-900"
+              class="flex items-center gap-2 px-4 py-2 bg-stone-100 rounded-lg border border-stone-200 dark:border-stone-700 dark:bg-stone-800/50 transition-colors duration-200 hover:border-amber-300 dark:hover:border-amber-700/50"
             >
               <img src="assets/icons/next.png" alt="Skill icon" class="h-6" />
               <span>Next</span>
             </div>
             <div
-              class="flex items-center gap-2 px-4 py-2 bg-green-100 rounded border border-slate-300 dark:border-slate-600 dark:bg-green-900"
+              class="flex items-center gap-2 px-4 py-2 bg-stone-100 rounded-lg border border-stone-200 dark:border-stone-700 dark:bg-stone-800/50 transition-colors duration-200 hover:border-amber-300 dark:hover:border-amber-700/50"
             >
               <img src="assets/icons/nest.png" alt="Skill icon" class="h-6" />
               <span>Nest</span>
             </div>
             <div
-              class="flex items-center gap-2 px-4 py-2 bg-green-100 rounded border border-slate-300 dark:border-slate-600 dark:bg-green-900"
+              class="flex items-center gap-2 px-4 py-2 bg-stone-100 rounded-lg border border-stone-200 dark:border-stone-700 dark:bg-stone-800/50 transition-colors duration-200 hover:border-amber-300 dark:hover:border-amber-700/50"
             >
               <img src="assets/icons/remix.png" alt="Skill icon" class="h-6" />
               <span>Remix</span>
             </div>
             <div
-              class="flex items-center gap-2 px-4 py-2 bg-green-100 rounded border border-slate-300 dark:border-slate-600 dark:bg-green-900"
+              class="flex items-center gap-2 px-4 py-2 bg-stone-100 rounded-lg border border-stone-200 dark:border-stone-700 dark:bg-stone-800/50 transition-colors duration-200 hover:border-amber-300 dark:hover:border-amber-700/50"
             >
               <img src="assets/icons/figma.png" alt="Skill icon" class="h-6" />
               <span>Figma</span>
@@ -366,30 +440,30 @@
           </div>
         </div>
 
-        <div class="h-[1px] bg-slate-200 dark:bg-gray-700"></div>
+        <div class="h-[1px] divider-fade"></div>
 
         <div
-          class="flex flex-col gap-4 text-sm leading-6 font-medium dark:font-normal dark:text-white relative"
+          class="flex flex-col gap-4 text-sm leading-6 font-medium dark:font-normal dark:text-white relative reveal"
         >
           <span
-            class="font-bold text-purple-700 md:absolute md:top-0 md:left-[-20px] md:translate-x-[-100%] dark:text-purple-400"
+            class="font-bold text-amber-700 md:absolute md:top-0 md:left-[-20px] md:translate-x-[-100%] dark:text-amber-500"
           >
             ✨ Blog
           </span>
           <p>
             <span
-              class="bg-purple-100 px-1 rounded border border-purple-300 text-slate-600 italic dark:border-purple-800 dark:bg-purple-950 dark:text-gray-300"
+              class="bg-amber-100/60 px-1 rounded border border-amber-200 text-stone-700 italic dark:border-amber-900/40 dark:bg-amber-950/40 dark:text-amber-100/90"
               >Writing</span
             >
             stories and poems (also
             <span
-              class="bg-purple-100 px-1 rounded border border-purple-300 text-slate-600 italic dark:border-purple-800 dark:bg-purple-950 dark:text-gray-300"
+              class="bg-amber-100/60 px-1 rounded border border-amber-200 text-stone-700 italic dark:border-amber-900/40 dark:bg-amber-950/40 dark:text-amber-100/90"
               >reading</span
             >) was my hobbies since my childhood in which I still think I had a
             knack (I'm not saying this out of self confidence, I still regret
             that I became a software engineer instead of a world famous
             <span
-              class="bg-purple-100 px-1 rounded border border-purple-300 text-slate-600 italic dark:border-purple-800 dark:bg-purple-950 dark:text-gray-300"
+              class="bg-amber-100/60 px-1 rounded border border-amber-200 text-stone-700 italic dark:border-amber-900/40 dark:bg-amber-950/40 dark:text-amber-100/90"
               >author</span
             >).
           </p>
@@ -402,7 +476,7 @@
           <p>
             I write
             <span
-              class="bg-purple-100 px-1 rounded border border-purple-300 text-slate-600 italic dark:border-purple-800 dark:bg-purple-950 dark:text-gray-300"
+              class="bg-amber-100/60 px-1 rounded border border-amber-200 text-stone-700 italic dark:border-amber-900/40 dark:bg-amber-950/40 dark:text-amber-100/90"
               >blog</span
             >
             posts nowadays, mostly technical things: challenges faced in
@@ -412,7 +486,7 @@
           <p>
             Here are some
             <span
-              class="bg-purple-100 px-1 rounded border border-purple-300 text-slate-600 italic dark:border-purple-800 dark:bg-purple-950 dark:text-gray-300"
+              class="bg-amber-100/60 px-1 rounded border border-amber-200 text-stone-700 italic dark:border-amber-900/40 dark:bg-amber-950/40 dark:text-amber-100/90"
               >recent posts</span
             >
             :
@@ -424,25 +498,25 @@
           ></div>
         </div>
 
-        <div class="h-[1px] bg-slate-200 dark:bg-gray-700"></div>
+        <div class="h-[1px] divider-fade"></div>
 
         <div
-          class="flex flex-col gap-4 text-sm leading-6 font-medium dark:font-normal dark:text-white relative"
+          class="flex flex-col gap-4 text-sm leading-6 font-medium dark:font-normal dark:text-white relative reveal"
         >
           <span
-            class="font-bold text-purple-700 md:absolute md:top-0 md:left-[-20px] md:translate-x-[-100%] dark:text-purple-400"
+            class="font-bold text-amber-700 md:absolute md:top-0 md:left-[-20px] md:translate-x-[-100%] dark:text-amber-500"
           >
             ✨ Career
           </span>
           <p>
             Got my first
             <span
-              class="bg-purple-100 px-1 rounded border border-purple-300 text-slate-600 italic dark:border-purple-800 dark:bg-purple-950 dark:text-gray-300"
+              class="bg-amber-100/60 px-1 rounded border border-amber-200 text-stone-700 italic dark:border-amber-900/40 dark:bg-amber-950/40 dark:text-amber-100/90"
               >offer letter</span
             >
             at the final year of my
             <span
-              class="bg-purple-100 px-1 rounded border border-purple-300 text-slate-600 italic dark:border-purple-800 dark:bg-purple-950 dark:text-gray-300"
+              class="bg-amber-100/60 px-1 rounded border border-amber-200 text-stone-700 italic dark:border-amber-900/40 dark:bg-amber-950/40 dark:text-amber-100/90"
               >high school</span
             >, while I was preparing for my exams. I was so much excited about
             the industry and realized that it was the best opportunity to start
@@ -457,18 +531,18 @@
           <p>
             Studying
             <span
-              class="bg-purple-100 px-1 rounded border border-purple-300 text-slate-600 italic dark:border-purple-800 dark:bg-purple-950 dark:text-gray-300"
+              class="bg-amber-100/60 px-1 rounded border border-amber-200 text-stone-700 italic dark:border-amber-900/40 dark:bg-amber-950/40 dark:text-amber-100/90"
               >Bachelor of Computer Application</span
             >
             at
             <span
-              class="bg-purple-100 px-1 rounded border border-purple-300 text-slate-600 italic dark:border-purple-800 dark:bg-purple-950 dark:text-gray-300"
+              class="bg-amber-100/60 px-1 rounded border border-amber-200 text-stone-700 italic dark:border-amber-900/40 dark:bg-amber-950/40 dark:text-amber-100/90"
               >Manipal University</span
             >
             along with my job now, which is almost manageable by a 21 year old.
             Here is my
             <span
-              class="bg-purple-100 px-1 rounded border border-purple-300 text-slate-600 italic dark:border-purple-800 dark:bg-purple-950 dark:text-gray-300"
+              class="bg-amber-100/60 px-1 rounded border border-amber-200 text-stone-700 italic dark:border-amber-900/40 dark:bg-amber-950/40 dark:text-amber-100/90"
               >career roadmap</span
             >
             :
@@ -476,18 +550,18 @@
 
           <div class="flex flex-col gap-4">
             <div
-              class="flex flex-col gap-2 p-4 bg-green-50 dark:bg-green-900 rounded border border-slate-300 dark:border-slate-600"
+              class="flex flex-col gap-2 p-3 bg-stone-100 dark:bg-stone-800/40 rounded-lg border border-stone-200 dark:border-stone-700 transition-colors duration-200 hover:border-amber-300 dark:hover:border-amber-700/50"
             >
               <div class="flex items-center justify-between">
                 <h5 class="font-semibold text-sm">Web developer • Freelance</h5>
                 <span class="text-xs">March 2018 - March 2022</span>
               </div>
-              <p class="text-xs text-slate-600 dark:text-gray-300">
+              <p class="text-xs text-stone-600 dark:text-stone-400">
                 React, Django, Next JS
               </p>
             </div>
             <div
-              class="flex flex-col gap-2 p-4 bg-green-50 dark:bg-green-900 rounded border border-slate-300 dark:border-slate-600"
+              class="flex flex-col gap-2 p-3 bg-stone-100 dark:bg-stone-800/40 rounded-lg border border-stone-200 dark:border-stone-700 transition-colors duration-200 hover:border-amber-300 dark:hover:border-amber-700/50"
             >
               <div class="flex items-center justify-between">
                 <h5 class="font-semibold text-sm">
@@ -495,12 +569,12 @@
                 </h5>
                 <span class="text-xs">April 2022 - December 2025</span>
               </div>
-              <p class="text-xs text-slate-600 dark:text-gray-300">
+              <p class="text-xs text-stone-600 dark:text-stone-400">
                 React, Nest JS, Remix
               </p>
             </div>
             <div
-              class="flex flex-col gap-2 p-4 bg-green-100 dark:bg-green-950 rounded border border-slate-300 dark:border-slate-600"
+              class="flex flex-col gap-2 p-3 bg-amber-50 dark:bg-amber-950/30 rounded-lg border border-amber-200 dark:border-amber-900/40 transition-colors duration-200 hover:border-amber-300 dark:hover:border-amber-700/50"
             >
               <div class="flex items-center justify-between">
                 <h5 class="font-semibold text-sm">
@@ -508,33 +582,33 @@
                 </h5>
                 <span class="text-xs">December 2025 - Now</span>
               </div>
-              <p class="text-xs text-slate-600 dark:text-gray-300">
+              <p class="text-xs text-stone-600 dark:text-stone-400">
                 ERP, Odoo, AWS
               </p>
             </div>
           </div>
         </div>
 
-        <div class="h-[1px] bg-slate-200 dark:bg-gray-700"></div>
+        <div class="h-[1px] divider-fade"></div>
 
         <div
-          class="flex flex-col gap-4 text-sm leading-6 font-medium dark:font-normal dark:text-white relative"
+          class="flex flex-col gap-4 text-sm leading-6 font-medium dark:font-normal dark:text-white relative reveal"
         >
           <span
-            class="font-bold text-purple-700 md:absolute md:top-0 md:left-[-20px] md:translate-x-[-100%] dark:text-purple-400"
+            class="font-bold text-amber-700 md:absolute md:top-0 md:left-[-20px] md:translate-x-[-100%] dark:text-amber-500"
           >
             ✨ Projects
           </span>
           <p>
             Designing and developing
             <span
-              class="bg-purple-100 px-1 rounded border border-purple-300 text-slate-600 italic dark:border-purple-800 dark:bg-purple-950 dark:text-gray-300"
+              class="bg-amber-100/60 px-1 rounded border border-amber-200 text-stone-700 italic dark:border-amber-900/40 dark:bg-amber-950/40 dark:text-amber-100/90"
               >static websites</span
             >
             was the primary gigs I could handle when I started freelancing web
             development. One of my friends' brother had an
             <span
-              class="bg-purple-100 px-1 rounded border border-purple-300 text-slate-600 italic dark:border-purple-800 dark:bg-purple-950 dark:text-gray-300"
+              class="bg-amber-100/60 px-1 rounded border border-amber-200 text-stone-700 italic dark:border-amber-900/40 dark:bg-amber-950/40 dark:text-amber-100/90"
               >ERP</span
             >
             development company and they out-sourced web development projects,
@@ -543,12 +617,12 @@
           <p>
             Eventually, I got a project from a start-up which was a
             <span
-              class="bg-purple-100 px-1 rounded border border-purple-300 text-slate-600 italic dark:border-purple-800 dark:bg-purple-950 dark:text-gray-300"
+              class="bg-amber-100/60 px-1 rounded border border-amber-200 text-stone-700 italic dark:border-amber-900/40 dark:bg-amber-950/40 dark:text-amber-100/90"
               >web app</span
             >
             with almost
             <span
-              class="bg-purple-100 px-1 rounded border border-purple-300 text-slate-600 italic dark:border-purple-800 dark:bg-purple-950 dark:text-gray-300"
+              class="bg-amber-100/60 px-1 rounded border border-amber-200 text-stone-700 italic dark:border-amber-900/40 dark:bg-amber-950/40 dark:text-amber-100/90"
               >3K+ users</span
             >, I could complete it in a few months which is running flawlessly
             until now. Still building projects to solve problems of my own or
@@ -557,7 +631,7 @@
           <p>
             Listing out some of my
             <span
-              class="bg-purple-100 px-1 rounded border border-purple-300 text-slate-600 italic dark:border-purple-800 dark:bg-purple-950 dark:text-gray-300"
+              class="bg-amber-100/60 px-1 rounded border border-amber-200 text-stone-700 italic dark:border-amber-900/40 dark:bg-amber-950/40 dark:text-amber-100/90"
               >popular projects</span
             >
             :
@@ -565,10 +639,10 @@
 
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div
-              class="flex flex-col items-stretch gap-4 p-3 bg-green-100 border border-slate-300 w-auto rounded dark:bg-green-900 dark:border-slate-600"
+              class="flex flex-col items-stretch gap-3 p-3 bg-stone-100 border border-stone-200 w-auto rounded-lg dark:bg-stone-800/50 dark:border-stone-700 transition-colors duration-200 hover:border-amber-300 dark:hover:border-amber-700/50"
             >
               <div
-                class="h-[150px] bg-black rounded border border-slate-300 dark:border-slate-600"
+                class="aspect-video bg-black rounded-md border border-stone-200 dark:border-stone-700"
                 style="background: url(assets/projects/farmfills.png); background-size: cover"
               ></div>
               <div class="flex flex-col gap-2 flex-1 justify-between">
@@ -584,7 +658,7 @@
                   <li class="text-xs">One time password login</li>
                 </ul>
                 <div
-                  class="flex gap-4 text-xs text-blue-600 underline dark:text-blue-300"
+                  class="flex gap-4 text-xs text-amber-700 dark:text-amber-400"
                 >
                   <a href="https://farmfills.com/" class="flex">
                     webpage
@@ -624,10 +698,10 @@
             </div>
 
             <div
-              class="flex flex-col items-stretch gap-4 p-3 bg-green-100 border border-slate-300 w-auto rounded dark:bg-green-900 dark:border-slate-600"
+              class="flex flex-col items-stretch gap-3 p-3 bg-stone-100 border border-stone-200 w-auto rounded-lg dark:bg-stone-800/50 dark:border-stone-700 transition-colors duration-200 hover:border-amber-300 dark:hover:border-amber-700/50"
             >
               <div
-                class="h-[150px] bg-black rounded border border-slate-300 dark:border-slate-600"
+                class="aspect-video bg-black rounded-md border border-stone-200 dark:border-stone-700"
                 style="background: url(assets/projects/publiso.png); background-size: cover"
               ></div>
               <div class="flex flex-col gap-2 flex-1 justify-between">
@@ -639,7 +713,7 @@
                   <li class="text-xs">Reading feature without losing PDF</li>
                 </ul>
                 <div
-                  class="flex gap-4 text-xs text-blue-600 underline dark:text-blue-300"
+                  class="flex gap-4 text-xs text-amber-700 dark:text-amber-400"
                 >
                   <a href="https://publiso.akbrews.com/" class="flex">
                     webpage
@@ -676,10 +750,10 @@
             </div>
 
             <div
-              class="flex flex-col items-stretch gap-4 p-3 bg-green-100 border border-slate-300 w-auto rounded dark:bg-green-900 dark:border-slate-600"
+              class="flex flex-col items-stretch gap-3 p-3 bg-stone-100 border border-stone-200 w-auto rounded-lg dark:bg-stone-800/50 dark:border-stone-700 transition-colors duration-200 hover:border-amber-300 dark:hover:border-amber-700/50"
             >
               <div
-                class="h-[150px] bg-black rounded border border-slate-300 dark:border-slate-600"
+                class="aspect-video bg-black rounded-md border border-stone-200 dark:border-stone-700"
                 style="background: url(assets/projects/chali.png); background-size: cover"
               ></div>
               <div class="flex flex-col gap-2 flex-1 justify-between">
@@ -697,7 +771,7 @@
                   </li>
                 </ul>
                 <div
-                  class="flex gap-4 text-xs text-blue-600 underline dark:text-blue-300"
+                  class="flex gap-4 text-xs text-amber-700 dark:text-amber-400"
                 >
                   <a href="https://chali.akbrews.com/" class="flex">
                     webpage
@@ -734,10 +808,10 @@
             </div>
 
             <div
-              class="flex flex-col items-stretch gap-4 p-3 bg-green-100 border border-slate-300 w-auto rounded dark:bg-green-900 dark:border-slate-600"
+              class="flex flex-col items-stretch gap-3 p-3 bg-stone-100 border border-stone-200 w-auto rounded-lg dark:bg-stone-800/50 dark:border-stone-700 transition-colors duration-200 hover:border-amber-300 dark:hover:border-amber-700/50"
             >
               <div
-                class="h-[150px] bg-black rounded border border-slate-300 dark:border-slate-600"
+                class="aspect-video bg-black rounded-md border border-stone-200 dark:border-stone-700"
                 style="background: url(assets/projects/thisorthat.png); background-size: cover"
               ></div>
               <div class="flex flex-col gap-2 flex-1 justify-between">
@@ -753,7 +827,7 @@
                   </li>
                 </ul>
                 <div
-                  class="flex gap-4 text-xs text-blue-600 underline dark:text-blue-300"
+                  class="flex gap-4 text-xs text-amber-700 dark:text-amber-400"
                 >
                   <a
                     href="https://pulimoodan.github.io/This-or-that/"
@@ -797,30 +871,82 @@
           </div>
         </div>
 
-        <div class="h-[1px] bg-slate-200 dark:bg-gray-700"></div>
+        <div class="h-[1px] divider-fade"></div>
+
+        <div
+          class="flex flex-col gap-4 text-sm leading-6 font-medium dark:font-normal dark:text-white relative reveal"
+        >
+          <span
+            class="font-bold text-amber-700 md:absolute md:top-0 md:left-[-20px] md:translate-x-[-100%] dark:text-amber-500"
+          >
+            ✨ Games
+          </span>
+          <p>
+            <span
+              class="bg-amber-100/60 px-1 rounded border border-amber-200 text-stone-700 italic dark:border-amber-900/40 dark:bg-amber-950/40 dark:text-amber-100/90"
+              >Game development</span
+            >
+            was the whole reason I touched a computer in the first place.
+            Somewhere in the career it quietly turned into a
+            <span
+              class="bg-amber-100/60 px-1 rounded border border-amber-200 text-stone-700 italic dark:border-amber-900/40 dark:bg-amber-950/40 dark:text-amber-100/90"
+              >hobby</span
+            >
+            I keep crawling back to. I just like building
+            small things that are annoyingly hard to put down.
+          </p>
+          <p>
+            These are
+            <span
+              class="bg-amber-100/60 px-1 rounded border border-amber-200 text-stone-700 italic dark:border-amber-900/40 dark:bg-amber-950/40 dark:text-amber-100/90"
+              >one-file games</span
+            >. No engine, no build, nothing to install (I can barely install
+            things myself). Open the page and play. Both are secretly about the
+            same thing:
+            <span
+              class="bg-amber-100/60 px-1 rounded border border-amber-200 text-stone-700 italic dark:border-amber-900/40 dark:bg-amber-950/40 dark:text-amber-100/90"
+              >greed</span
+            >, and the exact second it stops being worth it.
+          </p>
+          <p>
+            Go on, beat my
+            <span
+              class="bg-amber-100/60 px-1 rounded border border-amber-200 text-stone-700 italic dark:border-amber-900/40 dark:bg-amber-950/40 dark:text-amber-100/90"
+              >high score</span
+            >
+            , then tell me you stopped at the right moment:
+          </p>
+
+          <div
+            id="games"
+            class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4"
+          ></div>
+        </div>
+
+        <div class="h-[1px] divider-fade"></div>
 
         <div
           class="flex flex-col gap-4 text-sm leading-6 font-medium dark:font-normal dark:text-white relative text-center text-xs"
         >
           <p>
             Handcrafted by
-            <span class="text-blue-600 dark:text-blue-300">Akbar Ali</span>
+            <span class="text-amber-700 dark:text-amber-400">Akbar Ali</span>
             with
             <a
               href="https://tailwindcss.com/"
-              class="text-blue-600 underline dark:text-blue-300"
+              class="text-amber-700 dark:text-amber-400 link-underline"
             >
               tailwind css
             </a>
             . Inspired from
             <a
               href="https://leerob.io/"
-              class="text-blue-600 underline dark:text-blue-300"
+              class="text-amber-700 dark:text-amber-400 link-underline"
             >
               leerob.io
             </a>
             . <br />
-            <span class="text-slate-400">Last updated - July 2026</span>
+            <span class="text-stone-500">Last updated - July 2026</span>
           </p>
         </div>
       </div>
@@ -847,7 +973,7 @@
         });
 
       const arrowIcon =
-        '<svg class="w-5 inline text-blue-600 dark:text-blue-300" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.22 14.78a.75.75 0 0 0 1.06 0l7.22-7.22v5.69a.75.75 0 0 0 1.5 0v-7.5a.75.75 0 0 0-.75-.75h-7.5a.75.75 0 0 0 0 1.5h5.69l-7.22 7.22a.75.75 0 0 0 0 1.06Z" clip-rule="evenodd" /></svg>';
+        '<svg class="w-5 inline text-amber-700 dark:text-amber-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.22 14.78a.75.75 0 0 0 1.06 0l7.22-7.22v5.69a.75.75 0 0 0 1.5 0v-7.5a.75.75 0 0 0-.75-.75h-7.5a.75.75 0 0 0 0 1.5h5.69l-7.22 7.22a.75.75 0 0 0 0 1.06Z" clip-rule="evenodd" /></svg>';
 
       async function fetchPosts() {
         try {
@@ -861,12 +987,12 @@
             const card = document.createElement("a");
             card.href = post.url;
             card.className =
-              "flex flex-col gap-2 p-2 bg-green-100 border border-slate-300 w-auto rounded dark:bg-green-900 dark:border-slate-600";
+              "flex flex-col gap-3 p-3 bg-stone-100 border border-stone-200 w-auto rounded-lg dark:bg-stone-800/50 dark:border-stone-700 transition-colors duration-200 hover:border-amber-300 dark:hover:border-amber-700/50";
 
             const img = document.createElement("img");
             img.src = post.cover_image || post.social_image;
             img.alt = "Header image";
-            img.className = "h-[80px] rounded";
+            img.className = "aspect-video w-full object-cover rounded-md";
 
             const heading = document.createElement("h4");
             heading.className = "font-bold text-sm";
@@ -886,6 +1012,96 @@
       }
 
       fetchPosts();
+
+      const cardArrow =
+        '<svg class="w-3" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.22 14.78a.75.75 0 0 0 1.06 0l7.22-7.22v5.69a.75.75 0 0 0 1.5 0v-7.5a.75.75 0 0 0-.75-.75h-7.5a.75.75 0 0 0 0 1.5h5.69l-7.22 7.22a.75.75 0 0 0 0 1.06Z" clip-rule="evenodd" /></svg>';
+
+      function escapeHtml(str) {
+        return String(str).replace(
+          /[&<>"']/g,
+          (c) =>
+            ({
+              "&": "&amp;",
+              "<": "&lt;",
+              ">": "&gt;",
+              '"': "&quot;",
+              "'": "&#39;",
+            }[c])
+        );
+      }
+
+      async function renderGames() {
+        const container = document.getElementById("games");
+        if (!container) return;
+        try {
+          const res = await fetch("games.json");
+          const games = await res.json();
+          container.innerHTML = games
+            .map(
+              (g) => `
+            <a
+              href="games/${encodeURIComponent(g.slug)}/"
+              class="flex flex-col items-stretch gap-3 p-3 bg-stone-100 border border-stone-200 w-auto rounded-lg dark:bg-stone-800/50 dark:border-stone-700 transition-colors duration-200 hover:border-amber-300 dark:hover:border-amber-700/50"
+            >
+              <div
+                class="aspect-video rounded-md border border-stone-200 dark:border-stone-700 overflow-hidden relative flex items-end p-3"
+                style="background: ${escapeHtml(g.gradient)}"
+              >
+                <span class="absolute top-2 right-3 text-2xl">${escapeHtml(
+                  g.emoji
+                )}</span>
+                <div class="text-white">
+                  <div class="font-bold uppercase tracking-[0.25em] text-sm">${escapeHtml(
+                    g.title
+                  )}</div>
+                  <div class="text-[10px] tracking-wide text-white/70">${escapeHtml(
+                    g.tagline
+                  )}</div>
+                </div>
+              </div>
+              <div class="flex flex-col gap-2 flex-1 justify-between">
+                <p class="text-xs">${escapeHtml(g.line)}</p>
+                <div class="flex gap-4 text-xs text-amber-700 dark:text-amber-400">
+                  <span class="flex">play ${cardArrow}</span>
+                </div>
+              </div>
+            </a>`
+            )
+            .join("");
+        } catch (error) {
+          console.error("Failed to load games", error);
+        }
+      }
+
+      renderGames();
+
+      const progressBar = document.getElementById("scroll-progress");
+      function updateScrollProgress() {
+        const scrollTop = window.scrollY;
+        const docHeight =
+          document.documentElement.scrollHeight - window.innerHeight;
+        const progress = docHeight > 0 ? scrollTop / docHeight : 0;
+        progressBar.style.transform = `scaleX(${progress})`;
+      }
+      window.addEventListener("scroll", updateScrollProgress, {
+        passive: true,
+      });
+      updateScrollProgress();
+
+      const revealObserver = new IntersectionObserver(
+        (entries) => {
+          for (const entry of entries) {
+            if (entry.isIntersecting) {
+              entry.target.classList.add("in-view");
+              revealObserver.unobserve(entry.target);
+            }
+          }
+        },
+        { threshold: 0.1, rootMargin: "0px 0px -40px 0px" }
+      );
+      document
+        .querySelectorAll(".reveal")
+        .forEach((el) => revealObserver.observe(el));
     </script>
   </body>
 </html>
