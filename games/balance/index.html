@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
 <script src="/scripts/analytics.js"></script>
-<title>BALLANCE — keep the cargo aboard</title>
+<title>BALANCE — keep the cargo aboard</title>
 <style>
   :root { color-scheme: light; }
   * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -416,7 +416,7 @@
   // ---------- game state ----------
   const MENU = 0, PLAY = 1, DEAD = 2;
   let state = MENU;
-  let height = 0, score = 0, combo = 0, best = +(localStorage.getItem('ballance_best') || 0);
+  let height = 0, score = 0, combo = 0, best = +(localStorage.getItem('balance_best') || 0);
   let spawnTimer = 0;
   let dangerT = 0, dangerShown = 0, inDanger = false, maxDangerSeen = 0;
   let shake = 0, saveT = 0, saveFlash = 0, comboGlow = 0, bankFx = 0;
@@ -447,7 +447,7 @@
     score += pts; combo++; comboGlow = 1; bankFx = 1;
     floaters.push({ x: b.pos.x, y: b.pos.y, vy: -60, life: 1, text: '+' + pts, color: '#0b7a53', big: false });
     sndPlace();
-    if (height > best) { best = height; localStorage.setItem('ballance_best', String(best)); }
+    if (height > best) { best = height; localStorage.setItem('balance_best', String(best)); }
     spawnTimer = T.spawnDelay;
   }
   function onLanding(force) {
@@ -996,7 +996,7 @@
 
   function drawMenu() {
     const cy = H * 0.30;
-    type('BALLANCE', W / 2, cy, ink(0.93), 56, 800, 8);
+    type('BALANCE', W / 2, cy, ink(0.93), 56, 800, 8);
     hairline(cy + 32, 250, 0.14);
     type('LOAD THE BOAT  ·  KEEP THE CARGO SAFE', W / 2, cy + 54, ink(0.42), 10, 700, 2);
     type('DRAG TO TRIM AS THE CARGO STACKS UP', W / 2, cy + 74, ink(0.42), 10, 700, 2);

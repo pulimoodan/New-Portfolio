@@ -1,4 +1,4 @@
-# BALLANCE
+# BALANCE
 
 Load a boat without losing the cargo. Crates drop onto the deck one at a time; drag to trim the
 boat left or right and keep the growing cargo from sliding into the sea. One cargo loss ends the
