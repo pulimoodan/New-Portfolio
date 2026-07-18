@@ -434,7 +434,14 @@
   function spawnBlock() {
     const hw = 22 + Math.random() * 18, hh = 14;
     const x = (Math.random() * 2 - 1) * T.platHW * 0.42;   // drops within reach, but off-centre
-    const b = makeBody(x, stackTopY() - T.dropHeight - hh, hw, hh);
+    // T.dropHeight is world units, but zoom is width-constrained on narrow/tall screens (mobile
+    // portrait), so a fixed world offset shrinks to a short on-screen fall there. Pin the spawn
+    // point near the top of the visible play area in SCREEN space instead, converted back to
+    // world — same on-screen drop distance on any aspect ratio — but never closer to the stack
+    // than the old world-space minimum, so a short/wide screen still gets a real drop.
+    const nearTopWorldY = camY + (36 - pivotScreenY) / zoom;
+    const y = Math.min(stackTopY() - T.dropHeight - hh, nearTopWorldY);
+    const b = makeBody(x, y, hw, hh);
     b.color = colorFor(pieceIndex++);
     b.active = true;
     activeBlock = b; blocks.push(b);
