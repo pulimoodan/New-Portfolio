@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
 <script src="/scripts/analytics.js"></script>
-<title>BALANCE — keep the cargo aboard</title>
+<title>BALLANCE — keep the cargo aboard</title>
 <style>
   :root { color-scheme: light; }
   * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -138,6 +138,12 @@
     noiseBurst(0.4, 0.22, 180, 0.5);
     beep(150, 0.5, 0.14, 'sawtooth', 55);
   }
+  // A watery plop: filtered noise for the froth plus a low blip for the body of the splash.
+  function sndSplash(power) {
+    const f = Math.min(1, power);
+    noiseBurst(0.10 + f * 0.14, 0.04 + f * 0.11, 820 + f * 620, 0.7);
+    beep(320, 0.13, 0.02 + f * 0.05, 'sine', 130);
+  }
   // The creak: a wood-groan that lives while the stack sways past the danger line, so the
   // ear warns you before the eye sees a piece leave. Started/stopped like a held tone.
   let creakOsc = null, creakGain = null, creakFilt = null;
@@ -229,7 +235,7 @@
       pos: { x, y }, angle: 0, vel: { x: 0, y: 0 }, w: 0,
       hw, hh, invMass: 1 / mass, invI: 1 / I,
       color: [180, 180, 180], sq: 0, active: false, landed: false,
-      speedPre: 0, hadContact: false, settleT: 0, landAge: 0,
+      speedPre: 0, hadContact: false, settleT: 0, landAge: 0, wet: false,
     };
   }
 
@@ -379,7 +385,7 @@
     // The beam chases your input like a critically-damped spring. Its angular velocity is
     // real, so friction drags the pieces along when you tilt — that's the whole control.
     let target = currentTargetTilt();
-    if (state !== DEAD) target = clamp(target, -T.maxTilt, T.maxTilt);   // capsize breaks the limit
+    if (state !== DEAD) target = clamp(target, -T.maxTilt, T.maxTilt);   // losing the run breaks the limit
     platformW += (T.tiltStiff * (target - platform.angle) - T.tiltDamp * platformW) * h;
     platformW = clamp(platformW, -T.maxTiltW, T.maxTiltW);
     platform.angle += platformW * h;
@@ -410,14 +416,15 @@
   // ---------- game state ----------
   const MENU = 0, PLAY = 1, DEAD = 2;
   let state = MENU;
-  let height = 0, score = 0, combo = 0, best = +(localStorage.getItem('teeter_best') || 0);
+  let height = 0, score = 0, combo = 0, best = +(localStorage.getItem('ballance_best') || 0);
   let spawnTimer = 0;
   let dangerT = 0, dangerShown = 0, inDanger = false, maxDangerSeen = 0;
   let shake = 0, saveT = 0, saveFlash = 0, comboGlow = 0, bankFx = 0;
   let deadAt = 0, displayScore = 0, tickAcc = 0;
   let floaters = [];
   let zoom = 1, camY = 0;
-  let capsizeDir = 1, waterRise = 0;   // which way she rolls on the way down, and the flood level
+  let tipDir = 1, waterRise = 0;   // which way she tips over, and the flood level
+  let splashes = [];               // water droplets + surface rings thrown up at the waterline
 
   function stackTopY() {
     let top = -T.platHH;
@@ -440,7 +447,7 @@
     score += pts; combo++; comboGlow = 1; bankFx = 1;
     floaters.push({ x: b.pos.x, y: b.pos.y, vy: -60, life: 1, text: '+' + pts, color: '#0b7a53', big: false });
     sndPlace();
-    if (height > best) { best = height; localStorage.setItem('teeter_best', String(best)); }
+    if (height > best) { best = height; localStorage.setItem('ballance_best', String(best)); }
     spawnTimer = T.spawnDelay;
   }
   function onLanding(force) {
@@ -448,6 +455,28 @@
     shake = Math.max(shake, 0.25 + f * 0.75);
     activeBlock.sq = 0.35 + f * 0.5;         // squash on impact, springs back in update
     sndThud(f);
+    // The hull slaps the sea when the cargo lands: a little spray kicks up at each waterline
+    // corner, scaled by how hard the piece hit.
+    if (f > 0.12) {
+      const wl = effWL(), edge = T.platHW * 0.86;
+      spawnSplash(-edge, wl, f * 0.6, -1);
+      spawnSplash(edge, wl, f * 0.6, 1);
+    }
+  }
+  // Throw a burst of droplets and a spreading surface ring up from (x, y). `power` (~0..1.5)
+  // sets how many and how high; `bias` (-1..1) leans the spray left/right (0 = even fountain).
+  function spawnSplash(x, y, power, bias) {
+    bias = bias || 0;
+    splashes.push({ ring: true, x, y, age: 0, ttl: 0.42, r0: 3, r1: 12 + power * 20 });
+    const n = 4 + Math.round(power * 11);
+    for (let i = 0; i < n; i++) {
+      const dir = bias * 0.6 + (Math.random() - 0.5) * 1.7;   // horizontal lean
+      const up = 55 + Math.random() * (90 + power * 150);
+      splashes.push({
+        x, y, vx: dir * (40 + power * 90), vy: -up,
+        age: 0, ttl: 0.45 + Math.random() * 0.4, r: 1.1 + Math.random() * (1.6 + power),
+      });
+    }
   }
   function breakCombo() {
     if (combo > 1) sndShatter();
@@ -463,7 +492,7 @@
     // Roll toward the heavy side — whichever way she was already leaning, or where the load sat.
     let mx = 0, mm = 0;
     for (const b of blocks) { const m = 1 / b.invMass; mx += m * b.pos.x; mm += m; }
-    capsizeDir = (Math.abs(platform.angle) > 0.05 ? platform.angle : (mm ? mx : 1)) >= 0 ? 1 : -1;
+    tipDir = (Math.abs(platform.angle) > 0.05 ? platform.angle : (mm ? mx : 1)) >= 0 ? 1 : -1;
     state = DEAD; deadAt = performance.now();
     shake = 1.1; activeBlock = null;
     displayScore = 0; tickAcc = 0;
@@ -476,24 +505,21 @@
     blocks = []; activeBlock = null; pieceIndex = 0;
     height = 0; score = 0; combo = 0; floaters = [];
     dangerT = dangerShown = 0; inDanger = false; maxDangerSeen = 0;
-    platform.angle = 0; platformW = 0; waterRise = 0;
-    zoom = fitZoom(160);
+    platform.angle = 0; platformW = 0; waterRise = 0; splashes = [];
+    // zoom is left alone here — it eases from the menu's zoomed-out establishing shot up to
+    // gameplay framing in updateFx's camera lerp, so casting off reads as a zoom-in.
     state = PLAY; spawnTimer = 0.25;
   }
   function buildMenu() {
-    // A small live stack that jiggles under a lazy sway — the game demoing itself.
+    // Just the empty boat, bobbing at anchor — no demo cargo. The camera holds a wide,
+    // zoomed-out establishing shot until the player casts off.
     blocks = []; activeBlock = null; pieceIndex = 0;
-    for (let i = 0; i < 3; i++) {
-      const b = makeBody((i % 2 ? 10 : -8), -T.platHH - 15 - i * 30, 32 - i * 3, 14);
-      b.color = colorFor(i); b.landed = true;
-      blocks.push(b);
-    }
     state = MENU;
   }
 
   function currentTargetTilt() {
     if (state === MENU) return Math.sin(performance.now() / 900) * 0.035;   // she rocks at anchor
-    if (state === DEAD) return capsizeDir * 1.35;   // roll her all the way over
+    if (state === DEAD) return tipDir * 1.35;   // roll her all the way over
     return inputTilt();
   }
 
@@ -571,6 +597,17 @@
         if (b.pos.y > T.failY || Math.abs(b.pos.x) > 900) { triggerFail(); break; }
       }
     }
+    // A piece breaking the sea surface on the way down throws up a splash — a slipped crate in
+    // play, or the whole load spilling in on the capsize. One flag per piece so it fires once.
+    const wl = effWL();
+    for (const b of blocks) {
+      if (!b.wet && b.pos.y > wl && b.vel.y > 55) {
+        const power = clamp(b.vel.y / 700, 0.35, 1.4);
+        spawnSplash(b.pos.x, wl, power, 0);
+        sndSplash(power);
+      }
+      b.wet = b.pos.y > wl;
+    }
     if (state === PLAY && activeBlock) {
       if (!activeBlock.landed && activeBlock.hadContact) onLanding(activeBlock.speedPre), activeBlock.landed = true;
       if (activeBlock && activeBlock.landed) {
@@ -610,6 +647,15 @@
     for (const f of floaters) { f.y += f.vy * realDt; f.vy *= 0.93; f.life -= realDt * 0.7; }
     floaters = floaters.filter(f => f.life > 0);
 
+    // Splash particles: droplets arc under their own gravity and fade; rings just expand.
+    for (const p of splashes) {
+      p.age += realDt;
+      if (p.ring) continue;
+      p.x += p.vx * realDt; p.y += p.vy * realDt;
+      p.vy += 1600 * realDt; p.vx *= Math.exp(-2.2 * realDt);
+    }
+    splashes = splashes.filter(p => p.age < p.ttl);
+
     // On death the sea climbs and swallows the wreck; in play it only breathes with the danger.
     const wrTarget = state === DEAD ? 150 : 0;
     waterRise += (wrTarget - waterRise) * Math.min(1, (state === DEAD ? 0.7 : 3) * realDt);
@@ -621,7 +667,9 @@
     // the "camera pulls back" ramp, which also makes the same tilt read as a bigger move.
     let topY = -T.platHH;
     for (const b of blocks) topY = Math.min(topY, b.pos.y - b.hh);
-    const target = fitZoom(-topY + 60);
+    // The menu holds a wide establishing shot of the empty boat; casting off eases the camera
+    // in to gameplay framing, so PLAY's first frame doesn't jump-cut.
+    const target = state === MENU ? fitZoom(160) * 0.5 : fitZoom(-topY + 60);
     zoom += (target - zoom) * Math.min(1, 3.5 * realDt);
     camY = state === DEAD ? camY + (-40 - camY) * Math.min(1, 1.2 * realDt) : camY + (0 - camY) * Math.min(1, 4 * realDt);
 
@@ -699,31 +747,40 @@
     ctx.save();
     ctx.rotate(platform.angle);
     const deck = -T.platHH, bx = BOAT.bx(), by = BOAT.by(), arch = BOAT.arch;
+    // The tip points are the front hull's OWN rounded sheer endpoints, computed identically, so
+    // the interior's near-sheer edge coincides exactly with the front hull's top edge — no 1px
+    // gap between the layers — and the whole back rim tucks inside the rounded bow and stern.
+    const sheerCtl = { x: 0, y: deck + 2 };
+    const retract = (from, toward, d) => {
+      const dx = toward.x - from.x, dy = toward.y - from.y, len = Math.hypot(dx, dy) || 1;
+      return { x: from.x + dx / len * d, y: from.y + dy / len * d };
+    };
+    const L = retract({ x: -bx, y: by }, sheerCtl, 6), R = retract({ x: bx, y: by }, sheerCtl, 6);
     // interior: everything between the far rim and the near sheer
     ctx.beginPath();
-    ctx.moveTo(-bx, by);
-    ctx.quadraticCurveTo(0, by - arch, bx, by);      // far rim, arching up
-    ctx.quadraticCurveTo(0, deck + 2, -bx, by);      // near sheer, dipping down — back to start
+    ctx.moveTo(L.x, L.y);
+    ctx.quadraticCurveTo(0, by - arch, R.x, R.y);            // far rim, arching up
+    ctx.quadraticCurveTo(sheerCtl.x, sheerCtl.y, L.x, L.y);  // near sheer = front sheer, back to start
     ctx.closePath();
-    ctx.fillStyle = '#23262e'; ctx.fill();           // deep-shadow interior, near-black ink
+    ctx.fillStyle = '#2b2018'; ctx.fill();           // deep-shadow interior, warm dark ink
     // The far rim band: a TRUE constant-offset band under the arch (top and bottom edges are
     // the same curve, 7px apart — like the front band), clipped to the deck opening. In the
     // middle it reads as an even 7px stripe; toward the ends it fills the whole narrowing
     // opening and meets the corner at full width instead of thinning out.
     ctx.save();
     ctx.beginPath();
-    ctx.moveTo(-bx, by);
-    ctx.quadraticCurveTo(0, by - arch, bx, by);
-    ctx.quadraticCurveTo(0, deck + 2, -bx, by);
+    ctx.moveTo(L.x, L.y);
+    ctx.quadraticCurveTo(0, by - arch, R.x, R.y);
+    ctx.quadraticCurveTo(sheerCtl.x, sheerCtl.y, L.x, L.y);
     ctx.closePath();
     ctx.clip();                                      // the deck opening
     ctx.beginPath();
-    ctx.moveTo(-bx, by);
-    ctx.quadraticCurveTo(0, by - arch, bx, by);      // top edge = the arch
-    ctx.lineTo(bx, by + 7);
-    ctx.quadraticCurveTo(0, by - arch + 7, -bx, by + 7);   // bottom edge = arch shifted 7px
+    ctx.moveTo(L.x, L.y);
+    ctx.quadraticCurveTo(0, by - arch, R.x, R.y);           // top edge = the arch
+    ctx.lineTo(R.x, R.y + 7);
+    ctx.quadraticCurveTo(0, by - arch + 7, L.x, L.y + 7);   // bottom edge = arch shifted 7px
     ctx.closePath();
-    ctx.fillStyle = '#b3281c'; ctx.fill();   // the arcade red, shaded for the far side
+    ctx.fillStyle = '#9c6a38'; ctx.fill();   // weathered wood, shaded for the far side
     ctx.restore();
     ctx.restore();
   }
@@ -734,25 +791,76 @@
     const hw = T.platHW, deck = -T.platHH;
     const bx = BOAT.bx(), by = BOAT.by(), bot = BOAT.bot;
     const hull = (top) => {                // top: how far below the gunwale this band starts
+      // Both tips are softened: instead of the sheer and the hull bottom meeting at a hard
+      // point, each side is pulled back a few pixels and a short quadratic curves THROUGH the
+      // tip, so the bow and stern read as rounded timber rather than a sharp blade.
+      const c = by + top;
+      const RT = { x: bx, y: c }, LT = { x: -bx, y: c };   // right / left tips
+      const sheerCtl = { x: 0, y: deck + 2 + top };
+      const round = 6;
+      const retract = (from, toward, d) => {
+        const dx = toward.x - from.x, dy = toward.y - from.y, len = Math.hypot(dx, dy) || 1;
+        return { x: from.x + dx / len * d, y: from.y + dy / len * d };
+      };
+      const rIn = retract(RT, sheerCtl, round), rOut = retract(RT, { x: bx - 10, y: bot - 6 }, round);
+      const lIn = retract(LT, { x: -bx + 10, y: bot - 6 }, round), lOut = retract(LT, sheerCtl, round);
       ctx.beginPath();
-      ctx.moveTo(-bx, by + top);
-      ctx.quadraticCurveTo(0, deck + 2 + top, bx, by + top);              // the near-flat sheer
+      ctx.moveTo(lOut.x, lOut.y);
+      ctx.quadraticCurveTo(sheerCtl.x, sheerCtl.y, rIn.x, rIn.y);         // the near-flat sheer
+      ctx.quadraticCurveTo(RT.x, RT.y, rOut.x, rOut.y);                   // rounded bow tip
       // Not an arc: the bottom drops fast right at the tip, then runs FLAT across the belly.
       ctx.bezierCurveTo(bx - 10, bot - 6, bx - 26, bot, hw * 0.5, bot);   // quick turn at the bow
       ctx.lineTo(-hw * 0.5, bot);                                         // the flat belly
-      ctx.bezierCurveTo(-bx + 26, bot, -bx + 10, bot - 6, -bx, by + top); // and up to the stern
+      ctx.bezierCurveTo(-bx + 26, bot, -bx + 10, bot - 6, lIn.x, lIn.y);  // and up to the stern
+      ctx.quadraticCurveTo(LT.x, LT.y, lOut.x, lOut.y);                   // rounded stern tip
       ctx.closePath();
     };
     hull(0);
-    ctx.fillStyle = '#e5342b'; ctx.fill();   // the arcade-red band is the hull; ink covers below
+    ctx.fillStyle = '#c08c4c'; ctx.fill();   // sun-warmed wood band is the hull; timber covers below
     ctx.save(); hull(0); ctx.clip();
+    // Grain, drawn once across the whole clipped hull: a handful of wavering lines, each with
+    // its own gentle drift, so both the top band and the belly read as timber rather than
+    // uniform ruled stripes. Deterministic (no Math.random) so a frame redraw never flickers.
+    const grain = (gy0, gy1, n) => {
+      for (let i = 0; i < n; i++) {
+        const t = n > 1 ? i / (n - 1) : 0, gy = gy0 + (gy1 - gy0) * t;
+        const drift = Math.sin(i * 2.4) * 5, mid = Math.sin(i * 1.7 + 1) * 3;
+        ctx.strokeStyle = `rgba(58,36,18,${0.22 + 0.1 * (i % 2)})`;
+        ctx.lineWidth = 1.1 + (i % 3 === 0 ? 0.6 : 0);
+        ctx.beginPath();
+        ctx.moveTo(-bx, gy + drift * 0.3);
+        ctx.bezierCurveTo(-bx * 0.35, gy + mid, bx * 0.35, gy - mid, bx, gy - drift * 0.3);
+        ctx.stroke();
+      }
+    };
+    grain(by + 2, by + 9, 2);   // the top band, before the body covers the rest
     hull(11);
-    ctx.fillStyle = '#343945'; ctx.fill();   // ink body — red stays as the top band + tips
-    ctx.strokeStyle = '#eef0f3'; ctx.lineWidth = 3;
+    ctx.fillStyle = '#8a5c33'; ctx.fill();   // mid timber body — lighter band stays as the top + tips
+    grain(by + 15, bot - 3, 6);   // the belly
+    ctx.strokeStyle = '#efe3d2'; ctx.lineWidth = 3;
     ctx.beginPath();
     ctx.moveTo(-bx, by + 11); ctx.quadraticCurveTo(0, deck + 13, bx, by + 11); ctx.stroke();
     ctx.restore();
     ctx.restore();
+  }
+
+  function drawSplashes() {
+    // Drawn in world space, before the translucent water overlay — so droplets that fall back
+    // below the surface read as sinking under it, and spray above it stays bright.
+    for (const p of splashes) {
+      const k = 1 - p.age / p.ttl;
+      if (p.ring) {
+        const r = p.r0 + (p.r1 - p.r0) * (p.age / p.ttl);
+        ctx.save();
+        ctx.translate(p.x, p.y); ctx.scale(1, 0.32);   // flatten to sit on the surface
+        ctx.strokeStyle = `rgba(255,255,255,${k * 0.5})`; ctx.lineWidth = 1.6 / zoom;
+        ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2); ctx.stroke();
+        ctx.restore();
+      } else {
+        ctx.fillStyle = `rgba(236,248,255,${k * 0.9})`;
+        ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2); ctx.fill();
+      }
+    }
   }
 
   function drawWater(wlY) {
@@ -816,6 +924,7 @@
     }
     for (const b of blocks) drawBlock(b);
     drawBoatFront();   // the near wall covers a small slice of the cargo — they sit inside
+    drawSplashes();
     if (dbg.checked) drawHitboxes();
     for (const f of floaters) {
       ctx.save();
@@ -887,9 +996,9 @@
 
   function drawMenu() {
     const cy = H * 0.30;
-    type('TEETER', W / 2, cy, ink(0.93), 56, 800, 8);
+    type('BALLANCE', W / 2, cy, ink(0.93), 56, 800, 8);
     hairline(cy + 32, 250, 0.14);
-    type('LOAD THE BOAT  ·  DON\'T CAPSIZE HER', W / 2, cy + 54, ink(0.42), 10, 700, 2);
+    type('LOAD THE BOAT  ·  KEEP THE CARGO SAFE', W / 2, cy + 54, ink(0.42), 10, 700, 2);
     type('DRAG TO TRIM AS THE CARGO STACKS UP', W / 2, cy + 74, ink(0.42), 10, 700, 2);
     if (blink()) type('PRESS TO CAST OFF', W / 2, cy + 120, ink(0.85), 13, 800, 3);
     if (best > 0) type('BEST HAUL  ' + best, W / 2, H - 30, ink(0.3), 10, 700, 2);
@@ -899,7 +1008,7 @@
     const cy = H * 0.30;
     const isBest = height >= best && height > 0;
     ctx.globalAlpha = Math.min(1, (performance.now() - deadAt) / 260);
-    type('CAPSIZED', W / 2, cy - 8, RED, 46, 800, 5);
+    type('CARGO LOST', W / 2, cy - 8, RED, 46, 800, 5);
     hairline(cy + 22, 200, 0.13);
     type(String(height), W / 2, cy + 70, ink(0.93), 74, 800, 0);
     type(isBest ? '★  NEW BEST HAUL' : 'CARGO SHIPPED', W / 2, cy + 118, isBest ? GOLD : ink(0.36), 9, 700, 2);

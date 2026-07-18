@@ -1,7 +1,7 @@
-# TEETER
+# BALLANCE
 
-Load a boat without capsizing her. Crates drop onto the deck one at a time; drag to trim the
-boat left or right and keep the growing cargo from sliding into the sea. One capsize ends the
+Load a boat without losing the cargo. Crates drop onto the deck one at a time; drag to trim the
+boat left or right and keep the growing cargo from sliding into the sea. One cargo loss ends the
 run — you sail home with whatever you'd already stacked.
 
 A one-input physics game about greed and nerves. Every crate you land is a taller, heavier
@@ -49,7 +49,7 @@ There is no scripted difficulty. It all falls out of one honest 2D rigid-body si
   pulls back to keep it framed, which quietly makes the same trim read as a bigger roll —
   the ramp is free, nobody scripted it.
 
-Every capsize is a slope you chose to heel past.
+Every lost cargo run is a slope you chose to heel past.
 
 ## The four feedback beats
 
@@ -74,7 +74,7 @@ the game and it only exists because the danger reading is continuous and honest.
 yourself — sway past the danger line — and it shatters and resets. Long-term height goal,
 moment-to-moment stakes.
 
-The **capsize** is meant to be watched, not skipped: she rolls all the way over in slow-mo,
+The **cargo loss** is meant to be watched, not skipped: she rolls all the way over in slow-mo,
 the cargo spills into the sea and sinks, the water floods up over the wreck, and the score
 ticks up crate by crate with a counting sound. Losing should still feel good.
 
@@ -104,7 +104,7 @@ Around 30 boxes max, O(n²) broadphase with an AABB reject — trivially cheap a
 - **The sea carries the danger.** As the load leans, the water climbs the hull, darkens, and
   gets choppier — the low rail dips under and she starts shipping water. It's a literal,
   physical version of the balloon game's rising tide, so the two games share a language.
-- **The capsize** is the fail made to be watched: the hull rolls all the way over in slow-mo,
+- **Cargo lost** is the fail made to be watched: the hull rolls all the way over in slow-mo,
   the cargo spills into the sea and goes under (translucent water draws over it), and the flood
   climbs to swallow the wreck while the score ticks up.
 - **The camera** only zooms — the waterline stays pinned near the bottom — so a tall load
