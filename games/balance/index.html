@@ -95,12 +95,14 @@
   // Everything is synthesised — no assets. The point of the OVERVIEW is that sound is tied
   // to the physics: impact volume/pitch scale with collision force, the creak rises with sway.
   let AC = null;
+  const MASTER_GAIN = 2;   // overall loudness multiplier — raises the average volume across all cues
   function ac() {
     if (!AC) AC = new (window.AudioContext || window.webkitAudioContext)();
     if (AC.state === 'suspended') AC.resume();
     return AC;
   }
   function beep(freq, dur, vol, type, glideTo) {
+    vol *= MASTER_GAIN;
     const a = ac();
     const o = a.createOscillator(), g = a.createGain();
     o.type = type || 'triangle'; o.frequency.value = freq;
@@ -113,6 +115,7 @@
   // A soft oscillator note with a real attack + release so it never clicks — the basis for the
   // warm, rounded cues. Optional pitch glide over its life.
   function tone(freq, dur, vol, type, glideTo, attack) {
+    vol *= MASTER_GAIN;
     const a = ac();
     const o = a.createOscillator(), g = a.createGain();
     o.type = type || 'sine'; o.frequency.setValueAtTime(freq, a.currentTime);
@@ -127,6 +130,7 @@
   // Filtered-noise hit with an attack ramp and an optional filter sweep — soft taps, water
   // froth and breaks. Lowpass by default (round and dark), so nothing hisses.
   function noiseHit(dur, vol, from, to, type, q) {
+    vol *= MASTER_GAIN;
     const a = ac();
     const buf = a.createBuffer(1, Math.max(1, a.sampleRate * dur), a.sampleRate);
     const d = buf.getChannelData(0);
@@ -186,7 +190,7 @@
     const a = ac();
     // Above the danger line the groan gets louder and climbs — a slow, soft wood-strain.
     const x = Math.max(0, (d - 0.5) / 0.5);
-    creakGain.gain.setTargetAtTime(0.012 + x * 0.05, a.currentTime, 0.06);
+    creakGain.gain.setTargetAtTime((0.012 + x * 0.05) * MASTER_GAIN, a.currentTime, 0.06);
     creakOsc.frequency.setTargetAtTime(58 + x * 70 + Math.sin(a.currentTime * 22) * x * 12, a.currentTime, 0.06);
   }
   function stopCreak() {
@@ -478,7 +482,7 @@
     score += pts; combo++; comboGlow = 1; bankFx = 1;
     floaters.push({ x: b.pos.x, y: b.pos.y, vy: -60, life: 1, text: '+' + pts, color: '#0b7a53', big: false });
     sndPlace();
-    if (height > best) { best = height; localStorage.setItem('balance_best', String(best)); }
+    if (score > best) { best = score; localStorage.setItem('balance_best', String(best)); }
     spawnTimer = T.spawnDelay;
   }
   function onLanding(force) {
@@ -580,7 +584,7 @@
     const r = cvs.getBoundingClientRect();
     // A thumb can't sweep as far as a mouse, so touch gets a much shorter throw to hit full
     // tilt — otherwise the drag reads as sluggish on a tall phone screen.
-    const range = Math.max(80, r.height * (dragTouch ? 0.22 : 0.5));
+    const range = Math.max(80, r.height * (dragTouch ? 0.16 : 0.5));
     const dy = clientY - dragStartY;
     pointerTilt = clamp(dragStartTilt + dragSide * (dy / range) * T.maxTilt, -T.maxTilt, T.maxTilt);
   }
@@ -1021,8 +1025,6 @@
   }
 
   function drawHud() {
-    type(String(height), 26, 40, ink(0.92), 34, 800, 0, 'left');
-    type('CARGO', 26, 68, ink(0.34), 9, 700, 1.5, 'left');
     type(String(score), W - 26, 36, ink(0.6), 18, 700, 0, 'right');
     type('SCORE', W - 26, 58, ink(0.34), 9, 700, 1.5, 'right');
     // combo pill, centred under the score
@@ -1040,20 +1042,18 @@
     type('LOAD THE BOAT  ·  KEEP THE CARGO SAFE', W / 2, cy + 54, ink(0.42), 10, 700, 2);
     type('DRAG A SIDE TO TRIM AS THE CARGO STACKS UP', W / 2, cy + 74, ink(0.42), 10, 700, 2);
     if (blink()) type('PRESS TO CAST OFF', W / 2, cy + 120, ink(0.85), 13, 800, 3);
-    if (best > 0) type('BEST HAUL  ' + best, W / 2, H - 30, ink(0.3), 10, 700, 2);
+    if (best > 0) type('BEST SCORE  ' + best, W / 2, H - 30, ink(0.3), 10, 700, 2);
   }
 
   function drawGameOver() {
     const cy = H * 0.30;
-    const isBest = height >= best && height > 0;
+    const isBest = score >= best && score > 0;
     ctx.globalAlpha = Math.min(1, (performance.now() - deadAt) / 260);
     type('CARGO LOST', W / 2, cy - 8, RED, 46, 800, 5);
     hairline(cy + 22, 200, 0.13);
-    type(String(height), W / 2, cy + 70, ink(0.93), 74, 800, 0);
-    type(isBest ? '★  NEW BEST HAUL' : 'CARGO SHIPPED', W / 2, cy + 118, isBest ? GOLD : ink(0.36), 9, 700, 2);
+    type(String(displayScore), W / 2, cy + 70, ink(0.93), 74, 800, 0);
+    type(isBest ? '★  NEW BEST SCORE' : 'CARGO SHIPPED', W / 2, cy + 118, isBest ? GOLD : ink(0.36), 9, 700, 2);
     statStrip([
-      ['SCORE', String(displayScore)],
-      ['CARGO', String(height)],
       ['BEST', String(best)],
     ], cy + 162);
     if (performance.now() - deadAt > 800 && blink()) type('PRESS TO SAIL AGAIN', W / 2, cy + 232, ink(0.85), 13, 800, 3);
