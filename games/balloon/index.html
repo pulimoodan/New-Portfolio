@@ -152,6 +152,7 @@
   const MENU = 0, PLAY = 1, DEAD = 2;
   let state = MENU;
   let score = 0, level = 1, streak = 0, best = +(localStorage.getItem('pressure_best') || 0);
+  let runStartedAt = 0;
   let pressure = 0, capacity = 0, holding = false;
   let wobble = 0, shake = 0, bankFx = 0;
   let freeze = 0, punch = 0;   // hitstop and camera kick on the burst
@@ -239,6 +240,8 @@
     // Only the menu has a balloon parked up top to fly in; a retry starts in place.
     intro = fromMenu ? 0 : 1;
     state = PLAY; newBalloon();
+    runStartedAt = performance.now();
+    if (window.trackGame) trackGame('game_start', 'balloon');
   }
 
   function press() {
@@ -356,6 +359,12 @@
     ropeFree = true;
     if (rope[0]) { rope[0].px = rope[0].x + (Math.random() - 0.5) * 6; rope[0].py = rope[0].y - 4; }
     state = DEAD;
+    if (window.trackGame) {
+      trackGame('game_end', 'balloon', {
+        score,
+        duration_sec: Math.round((performance.now() - runStartedAt) / 1000),
+      });
+    }
   }
 
   // ---------- input ----------

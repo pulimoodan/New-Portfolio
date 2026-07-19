@@ -445,6 +445,7 @@
   const MENU = 0, PLAY = 1, DEAD = 2;
   let state = MENU;
   let height = 0, score = 0, combo = 0, best = +(localStorage.getItem('balance_best') || 0);
+  let runStartedAt = 0;
   let spawnTimer = 0;
   let dangerT = 0, dangerShown = 0, inDanger = false, maxDangerSeen = 0;
   let shake = 0, saveT = 0, saveFlash = 0, comboGlow = 0, bankFx = 0;
@@ -533,6 +534,12 @@
     displayScore = 0; tickAcc = 0;
     stopCreak();
     sndTopple();
+    if (window.trackGame) {
+      trackGame('game_end', 'balance', {
+        score,
+        duration_sec: Math.round((performance.now() - runStartedAt) / 1000),
+      });
+    }
   }
 
   function startRun() {
@@ -544,6 +551,8 @@
     // zoom is left alone here — it eases from the menu's zoomed-out establishing shot up to
     // gameplay framing in updateFx's camera lerp, so casting off reads as a zoom-in.
     state = PLAY; spawnTimer = 0.25;
+    runStartedAt = performance.now();
+    if (window.trackGame) trackGame('game_start', 'balance');
   }
   function buildMenu() {
     // Just the empty boat, bobbing at anchor — no demo cargo. The camera holds a wide,

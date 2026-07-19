@@ -14,3 +14,8 @@
   gtag("js", new Date());
   gtag("config", MEASUREMENT_ID);
 })();
+
+window.trackGame = function (event, gameName, params) {
+  if (typeof gtag !== "function") return;
+  gtag("event", event, Object.assign({ game_name: gameName }, params || {}));
+};
