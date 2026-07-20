@@ -1,0 +1,895 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<script src="/scripts/analytics.js"></script>
+<title>HOPPER — hold to charge, leap before it falls</title>
+<style>
+  :root { color-scheme: light; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    height: 100%; overflow: hidden;
+    background: #eef0f3;
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    -webkit-user-select: none; user-select: none;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: none;
+  }
+  #wrap {
+    position: fixed; inset: 10px; bottom: 44px;
+    display: grid; place-items: center;
+    border: 1px solid #dcdee3; border-radius: 10px;
+    overflow: hidden;
+    background: #ffffff;
+  }
+  canvas { display: block; }
+  #band {
+    position: fixed; left: 10px; right: 10px; bottom: 0; height: 44px;
+    display: flex; align-items: center; justify-content: center; gap: 6px;
+    font-size: 10px; font-weight: 700; letter-spacing: 2px;
+    color: rgba(24,26,33,0.4);
+    touch-action: auto;
+  }
+  #band a { color: rgba(24,26,33,0.85); text-decoration: underline; }
+</style>
+</head>
+<body>
+<div id="wrap"><canvas id="c"></canvas></div>
+<div id="band">BREWED CAREFULLY BY <a href="../../index.html">AKBAR ALI</a></div>
+<script>
+(() => {
+  'use strict';
+
+  // ---------- tuning ----------
+  // The whole game is one projectile launched at a FIXED angle, so power is the only
+  // variable the player controls. That's the point: a higher/farther pole needs more
+  // charge, a lower/nearer one needs less, and the mapping is monotonic — you learn it
+  // by feel. Everything else (gaps, heights, collapse time) just moves the target.
+  const THETA = Math.PI / 3;            // 60° launch. Steep, so the arc is tall and HEIGHT matters.
+  const T = {
+    chargeTime: 0.9,                    // seconds from empty to full charge. A deliberate hold, not a mash.
+    // Collapse pressure: the pole you're standing on gives way after this long. It shrinks
+    // with level, so late game you can't stand and deliberate — you have to commit fast.
+    collapseBase: 3.4,
+    collapsePerLvl: 0.14,
+    collapseFloor: 1.5,
+    firstPoleBonus: 1.4,                // the very first pole holds a little longer — a breath to read the board.
+    // Pole placement, all in fractions of the play area so it scales to any screen.
+    gapBase: 0.40, gapPerLvl: 0.018, gapMax: 0.62, gapJitter: 0.06,
+    polWFrac: 0.16, polWMin: 0.075, polWStep: 0.006,   // poles narrow with level → tighter landings.
+    perfectBand: 0.30,                  // land within 30% of centre → PERFECT, bumps the combo.
+    comboStep: 0.25,
+  };
+
+  // ---------- canvas ----------
+  const cvs = document.getElementById('c');
+  const ctx = cvs.getContext('2d');
+  let W = 0, H = 0, DPR = 1;
+  // Physics scales with the screen so the arc looks the same on a phone and a monitor.
+  // g ∝ W and the speed band ∝ W, which keeps required-power identical across resolutions.
+  let G = 0, VMIN = 0, VMAX = 0;
+  function resize() {
+    DPR = Math.min(window.devicePixelRatio || 1, 2);
+    const wrap = document.getElementById('wrap');
+    W = wrap.clientWidth;
+    H = wrap.clientHeight;
+    cvs.width = W * DPR; cvs.height = H * DPR;
+    cvs.style.width = W + 'px'; cvs.style.height = H + 'px';
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    G = 4.5 * W;
+    VMIN = 1.05 * W;
+    VMAX = 2.25 * W;
+    CH = Math.max(30, Math.min(64, H * 0.10));
+    if (typeof state !== 'undefined' && state === MENU) placeMenuScene();
+  }
+  window.addEventListener('resize', resize);
+
+  // ---------- audio ----------
+  let AC = null;
+  function ac() {
+    if (!AC) AC = new (window.AudioContext || window.webkitAudioContext)();
+    if (AC.state === 'suspended') AC.resume();
+    return AC;
+  }
+  function beep(freq, dur, vol, type) {
+    const a = ac();
+    const o = a.createOscillator(), g = a.createGain();
+    o.type = type || 'triangle'; o.frequency.value = freq;
+    g.gain.setValueAtTime(vol, a.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.0001, a.currentTime + dur);
+    o.connect(g); g.connect(a.destination);
+    o.start(); o.stop(a.currentTime + dur);
+  }
+  function noiseBurst(dur, vol, hz) {
+    const a = ac();
+    const buf = a.createBuffer(1, a.sampleRate * dur, a.sampleRate);
+    const d = buf.getChannelData(0);
+    for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / d.length);
+    const src = a.createBufferSource(); src.buffer = buf;
+    const f = a.createBiquadFilter(); f.type = 'bandpass'; f.frequency.value = hz; f.Q.value = 0.7;
+    const g = a.createGain(); g.gain.value = vol;
+    src.connect(f); f.connect(g); g.connect(a.destination);
+    src.start();
+  }
+  // The charge tone winds UP with the power — a spring being loaded. Release cuts it dead.
+  let chargeOsc = null, chargeGain = null;
+  function startChargeTone() {
+    const a = ac();
+    chargeOsc = a.createOscillator();
+    chargeGain = a.createGain();
+    chargeOsc.type = 'square';
+    chargeOsc.frequency.value = 150;
+    chargeGain.gain.value = 0.0001;
+    chargeGain.gain.linearRampToValueAtTime(0.03, a.currentTime + 0.04);
+    const f = a.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = 1100;
+    chargeOsc.connect(f); f.connect(chargeGain); chargeGain.connect(a.destination);
+    chargeOsc.start();
+  }
+  function updateChargeTone(p) {
+    if (!chargeOsc) return;
+    chargeOsc.frequency.setTargetAtTime(150 + p * 620, AC.currentTime, 0.03);
+  }
+  function stopChargeTone() {
+    if (!chargeOsc) return;
+    const a = ac(), o = chargeOsc, g = chargeGain;
+    g.gain.cancelScheduledValues(a.currentTime);
+    g.gain.setTargetAtTime(0.0001, a.currentTime, 0.02);
+    o.stop(a.currentTime + 0.1);
+    chargeOsc = null; chargeGain = null;
+  }
+  const sndJump = (p) => {
+    // A rising "whoop" — the spring releasing. Higher charge, higher launch note.
+    const a = ac();
+    const o = a.createOscillator(), g = a.createGain();
+    o.type = 'triangle';
+    o.frequency.setValueAtTime(220 + p * 120, a.currentTime);
+    o.frequency.exponentialRampToValueAtTime(560 + p * 360, a.currentTime + 0.13);
+    g.gain.setValueAtTime(0.18, a.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.0001, a.currentTime + 0.16);
+    o.connect(g); g.connect(a.destination);
+    o.start(); o.stop(a.currentTime + 0.17);
+  };
+  const sndLand = () => { noiseBurst(0.07, 0.22, 200); beep(150, 0.08, 0.11, 'sine'); };
+  const sndPerfect = () => {
+    beep(880, 0.09, 0.15, 'triangle');
+    setTimeout(() => beep(1320, 0.12, 0.12, 'triangle'), 55);
+  };
+  const sndCreak = () => noiseBurst(0.18, 0.10, 340);
+  const sndFall = () => {
+    const a = ac();
+    const o = a.createOscillator(), g = a.createGain();
+    o.type = 'sawtooth';
+    o.frequency.setValueAtTime(420, a.currentTime);
+    o.frequency.exponentialRampToValueAtTime(70, a.currentTime + 0.5);
+    g.gain.setValueAtTime(0.14, a.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.0001, a.currentTime + 0.55);
+    const f = a.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = 1400;
+    o.connect(f); f.connect(g); g.connect(a.destination);
+    o.start(); o.stop(a.currentTime + 0.56);
+  };
+
+  // ---------- state ----------
+  const MENU = 0, PLAY = 1, DEAD = 2;
+  // Within PLAY the hopper is either standing (idle), loading a jump (charge), airborne
+  // (fly), or falling to its death (fall).
+  const IDLE = 'idle', CHARGE = 'charge', FLY = 'fly', FALL = 'fall';
+  let state = MENU, phase = IDLE;
+  let score = 0, level = 1, combo = 0;
+  let best = +(localStorage.getItem('hopper_best') || 0);
+  let runStartedAt = 0, deadAt = 0, deathCause = '';
+
+  let CH = 40;                          // hopper height
+  let poles = [], cur = 0;              // world of poles; `cur` is the one we're standing on
+  let curCollapse = 3.4, standElapsed = 0, creaked = false, toppleT = 0;
+  let power = 0;
+  let camX = 0, camTarget = 0;
+  let zoom = 1, intro = 0;              // intro: 0 = menu framing (zoomed out), 1 = play framing
+  const MENU_ZOOM = 0.8;
+  const easeInOut = (t) => t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+  let shake = 0, landSquash = 0, bankFx = 0;
+  let dust = [], floaters = [];
+
+  // The hopper. Feet are the anchor (fx, fy) in world space; everything is drawn above them.
+  const hop = { fx: 0, fy: 0, prevFy: 0, vx: 0, vy: 0, spin: 0, spinRate: 0 };
+
+  // ---------- helpers ----------
+  const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+  const lerp = (a, b, t) => a + (b - a) * t;
+  const ink = (a) => `rgba(24,26,33,${a})`;
+  const ACCENT = '#f97316', ACCENT_D = '#c2410c', RED = '#e5342b', GOLD = '#b45309';
+  const S2W = (wx) => wx - camX;        // world x -> screen x
+
+  function rr(x, y, w, h, r) {
+    r = Math.min(r, w / 2, h / 2);
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y, x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r);
+    ctx.arcTo(x, y, x + w, y, r);
+    ctx.closePath();
+  }
+  const ell = (x, y, rx, ry) => { ctx.beginPath(); ctx.ellipse(x, y, rx, ry, 0, 0, Math.PI * 2); ctx.closePath(); };
+  const grad = (x0, y0, x1, y1, a, b) => {
+    const g = ctx.createLinearGradient(x0, y0, x1, y1);
+    g.addColorStop(0, a); g.addColorStop(1, b); return g;
+  };
+
+  // ---------- characters ----------
+  // Each draws around FEET at the origin (0,0), body rising into negative y, unit = height u.
+  // The caller sets up translate/scale/rotate; these just paint the critter. No shadow — the
+  // game lays that down itself so it doesn't tumble with the sprite mid-flight.
+  const CHARS = {
+    frog(u) {
+      const bw = u * 0.72, bh = u * 0.66, top = -bh;
+      ctx.fillStyle = '#3c9a46';
+      ell(-bw * 0.34, -bh * 0.04, bw * 0.2, bh * 0.1); ctx.fill();
+      ell(bw * 0.34, -bh * 0.04, bw * 0.2, bh * 0.1); ctx.fill();
+      ctx.fillStyle = grad(0, top, 0, 0, '#78d76e', '#3fa74c');
+      ell(0, -bh * 0.42, bw * 0.5, bh * 0.5); ctx.fill();
+      ctx.fillStyle = 'rgba(230,255,220,0.5)';
+      ell(0, -bh * 0.30, bw * 0.3, bh * 0.28); ctx.fill();
+      const ey = top + bh * 0.08, ex = bw * 0.26;
+      ctx.fillStyle = '#57c257';
+      ell(-ex, ey, bw * 0.2, bw * 0.2); ctx.fill(); ell(ex, ey, bw * 0.2, bw * 0.2); ctx.fill();
+      ctx.fillStyle = '#fff';
+      ell(-ex, ey, bw * 0.14, bw * 0.14); ctx.fill(); ell(ex, ey, bw * 0.14, bw * 0.14); ctx.fill();
+      ctx.fillStyle = '#12181a';
+      ell(-ex + 1, ey + 1, bw * 0.06, bw * 0.06); ctx.fill(); ell(ex + 1, ey + 1, bw * 0.06, bw * 0.06); ctx.fill();
+      ctx.strokeStyle = '#1f5a2a'; ctx.lineWidth = Math.max(1.5, u * 0.03); ctx.lineCap = 'round';
+      ctx.beginPath(); ctx.arc(0, -bh * 0.42, bw * 0.28, 0.15 * Math.PI, 0.85 * Math.PI); ctx.stroke();
+    },
+    cat(u) {
+      const bw = u * 0.6, bh = u * 0.78, top = -bh;
+      ctx.strokeStyle = '#3a4150'; ctx.lineWidth = u * 0.12; ctx.lineCap = 'round';
+      ctx.beginPath(); ctx.moveTo(bw * 0.4, -bh * 0.1);
+      ctx.quadraticCurveTo(bw * 0.95, -bh * 0.1, bw * 0.8, -bh * 0.55); ctx.stroke();
+      ctx.fillStyle = grad(0, top, 0, 0, '#59616f', '#353b47');
+      rr(-bw / 2, top + bh * 0.18, bw, bh * 0.82, bw * 0.42); ctx.fill();
+      ctx.beginPath();
+      ctx.moveTo(-bw * 0.42, top + bh * 0.30); ctx.lineTo(-bw * 0.34, top - bh * 0.02); ctx.lineTo(-bw * 0.06, top + bh * 0.22); ctx.closePath();
+      ctx.moveTo(bw * 0.42, top + bh * 0.30); ctx.lineTo(bw * 0.34, top - bh * 0.02); ctx.lineTo(bw * 0.06, top + bh * 0.22); ctx.closePath();
+      ctx.fill();
+      ctx.fillStyle = '#d98a9a';
+      ctx.beginPath();
+      ctx.moveTo(-bw * 0.30, top + bh * 0.20); ctx.lineTo(-bw * 0.27, top + bh * 0.05); ctx.lineTo(-bw * 0.15, top + bh * 0.18); ctx.closePath();
+      ctx.moveTo(bw * 0.30, top + bh * 0.20); ctx.lineTo(bw * 0.27, top + bh * 0.05); ctx.lineTo(bw * 0.15, top + bh * 0.18); ctx.closePath();
+      ctx.fill();
+      ctx.fillStyle = '#9be36b';
+      ell(-bw * 0.2, top + bh * 0.42, bw * 0.11, bw * 0.15); ctx.fill();
+      ell(bw * 0.2, top + bh * 0.42, bw * 0.11, bw * 0.15); ctx.fill();
+      ctx.fillStyle = '#10140f';
+      ctx.fillRect(-bw * 0.2 - 1, top + bh * 0.36, 2, bw * 0.24);
+      ctx.fillRect(bw * 0.2 - 1, top + bh * 0.36, 2, bw * 0.24);
+      ctx.fillStyle = '#d98a9a';
+      ctx.beginPath(); ctx.moveTo(0, top + bh * 0.55); ctx.lineTo(-3, top + bh * 0.51); ctx.lineTo(3, top + bh * 0.51); ctx.closePath(); ctx.fill();
+      ctx.strokeStyle = 'rgba(255,255,255,0.5)'; ctx.lineWidth = 1;
+      for (const s of [-1, 1]) {
+        ctx.beginPath(); ctx.moveTo(s * bw * 0.12, top + bh * 0.56); ctx.lineTo(s * bw * 0.5, top + bh * 0.52); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(s * bw * 0.12, top + bh * 0.6); ctx.lineTo(s * bw * 0.5, top + bh * 0.62); ctx.stroke();
+      }
+    },
+    ninja(u) {
+      const bw = u * 0.62, bh = u * 0.76, top = -bh, ac = ACCENT;
+      ctx.fillStyle = ac;
+      ctx.beginPath(); ctx.moveTo(bw * 0.4, top + bh * 0.34); ctx.lineTo(bw * 0.95, top + bh * 0.26); ctx.lineTo(bw * 0.9, top + bh * 0.42); ctx.closePath(); ctx.fill();
+      ctx.beginPath(); ctx.moveTo(bw * 0.4, top + bh * 0.42); ctx.lineTo(bw * 0.85, top + bh * 0.52); ctx.lineTo(bw * 0.78, top + bh * 0.58); ctx.closePath(); ctx.fill();
+      ctx.fillStyle = grad(0, top, 0, 0, '#2c3140', '#191c25');
+      rr(-bw / 2, top, bw, bh, bw * 0.44); ctx.fill();
+      ctx.fillStyle = ac;
+      rr(-bw * 0.5, top + bh * 0.3, bw, bh * 0.18, 3); ctx.fill();
+      ctx.fillStyle = '#fff';
+      ctx.save(); ctx.translate(-bw * 0.2, top + bh * 0.39); ctx.rotate(0.2); rr(-bw * 0.12, -bw * 0.06, bw * 0.24, bw * 0.12, 2); ctx.fill(); ctx.restore();
+      ctx.save(); ctx.translate(bw * 0.2, top + bh * 0.39); ctx.rotate(-0.2); rr(-bw * 0.12, -bw * 0.06, bw * 0.24, bw * 0.12, 2); ctx.fill(); ctx.restore();
+      ctx.fillStyle = '#10131a';
+      ell(-bw * 0.18, top + bh * 0.4, bw * 0.05, bw * 0.05); ctx.fill();
+      ell(bw * 0.18, top + bh * 0.4, bw * 0.05, bw * 0.05); ctx.fill();
+      ctx.fillStyle = '#12141b';
+      ell(-bw * 0.24, -bh * 0.02, bw * 0.18, bh * 0.06); ctx.fill();
+      ell(bw * 0.24, -bh * 0.02, bw * 0.18, bh * 0.06); ctx.fill();
+    },
+    robot(u) {
+      const bw = u * 0.6, bh = u * 0.62, top = -bh, ac = ACCENT;
+      ctx.strokeStyle = '#8a94a3'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(0, top - bh * 0.22); ctx.lineTo(0, top); ctx.stroke();
+      ctx.fillStyle = ac; ell(0, top - bh * 0.24, bw * 0.09, bw * 0.09); ctx.fill();
+      ctx.fillStyle = '#7f8a99';
+      rr(-bw * 0.66, top + bh * 0.35, bw * 0.2, bh * 0.28, 4); ctx.fill();
+      rr(bw * 0.46, top + bh * 0.35, bw * 0.2, bh * 0.28, 4); ctx.fill();
+      ctx.fillStyle = grad(-bw / 2, top, bw / 2, 0, '#dfe4ea', '#9aa5b3');
+      rr(-bw / 2, top, bw, bh, bw * 0.2); ctx.fill();
+      ctx.fillStyle = '#1b2029';
+      rr(-bw * 0.36, top + bh * 0.16, bw * 0.72, bh * 0.4, bw * 0.14); ctx.fill();
+      ctx.fillStyle = ac;
+      ell(-bw * 0.14, top + bh * 0.36, bw * 0.08, bw * 0.08); ctx.fill();
+      ell(bw * 0.14, top + bh * 0.36, bw * 0.08, bw * 0.08); ctx.fill();
+      ctx.strokeStyle = 'rgba(255,255,255,0.5)'; ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.moveTo(-bw * 0.22, top + bh * 0.62); ctx.lineTo(bw * 0.22, top + bh * 0.62); ctx.stroke();
+      ctx.fillStyle = '#7f8a99';
+      rr(-bw * 0.3, -bh * 0.12, bw * 0.22, bh * 0.14, 3); ctx.fill();
+      rr(bw * 0.08, -bh * 0.12, bw * 0.22, bh * 0.14, 3); ctx.fill();
+    },
+    fox(u) {
+      const bw = u * 0.64, bh = u * 0.74, top = -bh;
+      ctx.fillStyle = '#e0692f';
+      ctx.beginPath(); ctx.moveTo(bw * 0.36, -bh * 0.1);
+      ctx.quadraticCurveTo(bw * 1.0, -bh * 0.05, bw * 0.78, -bh * 0.5);
+      ctx.quadraticCurveTo(bw * 0.6, -bh * 0.2, bw * 0.36, -bh * 0.24); ctx.closePath(); ctx.fill();
+      ctx.fillStyle = '#f3ede4'; ell(bw * 0.82, -bh * 0.46, bw * 0.12, bw * 0.14); ctx.fill();
+      ctx.fillStyle = grad(0, top, 0, 0, '#f2914f', '#d1552a');
+      rr(-bw / 2, top + bh * 0.16, bw, bh * 0.84, bw * 0.4); ctx.fill();
+      ctx.fillStyle = '#d1552a';
+      ctx.beginPath(); ctx.moveTo(-bw * 0.4, top + bh * 0.28); ctx.lineTo(-bw * 0.42, top - bh * 0.04); ctx.lineTo(-bw * 0.1, top + bh * 0.2); ctx.closePath();
+      ctx.moveTo(bw * 0.4, top + bh * 0.28); ctx.lineTo(bw * 0.42, top - bh * 0.04); ctx.lineTo(bw * 0.1, top + bh * 0.2); ctx.closePath(); ctx.fill();
+      ctx.fillStyle = '#241a16';
+      ctx.beginPath(); ctx.moveTo(-bw * 0.32, top + bh * 0.2); ctx.lineTo(-bw * 0.34, top + bh * 0.03); ctx.lineTo(-bw * 0.2, top + bh * 0.16); ctx.closePath();
+      ctx.moveTo(bw * 0.32, top + bh * 0.2); ctx.lineTo(bw * 0.34, top + bh * 0.03); ctx.lineTo(bw * 0.2, top + bh * 0.16); ctx.closePath(); ctx.fill();
+      ctx.fillStyle = '#f6f1e9';
+      ctx.beginPath(); ctx.ellipse(0, top + bh * 0.62, bw * 0.34, bh * 0.24, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#241a16';
+      ell(-bw * 0.19, top + bh * 0.42, bw * 0.07, bw * 0.09); ctx.fill();
+      ell(bw * 0.19, top + bh * 0.42, bw * 0.07, bw * 0.09); ctx.fill();
+      ell(0, top + bh * 0.56, bw * 0.08, bw * 0.06); ctx.fill();
+    },
+    astro(u) {
+      const bw = u * 0.64, bh = u * 0.56, top = -bh, ac = ACCENT;
+      ctx.fillStyle = '#b9c0ca'; rr(-bw * 0.42, top + bh * 0.1, bw * 0.84, bh * 0.7, bw * 0.16); ctx.fill();
+      ctx.fillStyle = grad(0, top, 0, 0, '#f4f6f9', '#cdd4dd');
+      rr(-bw / 2, top + bh * 0.2, bw, bh * 0.8, bw * 0.28); ctx.fill();
+      ctx.fillStyle = ac; ell(0, top + bh * 0.7, bw * 0.08, bw * 0.08); ctx.fill();
+      ctx.fillStyle = 'rgba(120,130,145,0.5)';
+      ctx.fillRect(-bw * 0.02, top + bh * 0.5, bw * 0.04, bh * 0.42);
+      const hy = top + bh * 0.02, hr = bw * 0.44;
+      ctx.fillStyle = '#f4f6f9'; ell(0, hy, hr, hr); ctx.fill();
+      ctx.fillStyle = grad(-hr, hy - hr, hr, hy + hr, '#2a3550', '#0f1626');
+      ell(0, hy, hr * 0.78, hr * 0.78); ctx.fill();
+      ctx.fillStyle = 'rgba(255,255,255,0.45)';
+      ell(-hr * 0.28, hy - hr * 0.28, hr * 0.24, hr * 0.34); ctx.fill();
+      ctx.fillStyle = ac; ctx.globalAlpha = 0.5; ell(hr * 0.2, hy + hr * 0.2, hr * 0.5, hr * 0.14); ctx.fill(); ctx.globalAlpha = 1;
+      ctx.fillStyle = '#cdd4dd';
+      rr(-bw * 0.3, -bh * 0.14, bw * 0.24, bh * 0.2, 4); ctx.fill();
+      rr(bw * 0.06, -bh * 0.14, bw * 0.24, bh * 0.2, 4); ctx.fill();
+    },
+  };
+  const CHAR_ORDER = ['frog', 'cat', 'ninja', 'robot', 'fox', 'astro'];
+  const CHAR_NAME = { frog: 'FROG', cat: 'CAT', ninja: 'NINJA', robot: 'ROBOT', fox: 'FOX', astro: 'ASTRO' };
+  const savedChar = localStorage.getItem('hopper_char');
+  let selectedChar = CHAR_ORDER.includes(savedChar) ? savedChar : 'frog';
+  let charSlots = [];   // menu hit-boxes, rebuilt each frame the menu draws
+  function pickChar(id) {
+    if (!CHARS[id]) return;
+    selectedChar = id; localStorage.setItem('hopper_char', id);
+    ac(); beep(660, 0.05, 0.08);
+  }
+  function cycleChar(dir) {
+    const n = CHAR_ORDER.length;
+    let i = (CHAR_ORDER.indexOf(selectedChar) + dir + n) % n;
+    pickChar(CHAR_ORDER[i]);
+  }
+
+  // ---------- beam ----------
+  // One material — timber. Draws a pillar from topY down to `by` (kept well below the frame so
+  // the zoom-out on the menu never lifts the base off the floor), plus the tree-ring cap.
+  function drawBeam(cx, topY, bw, by) {
+    ctx.fillStyle = grad(cx - bw / 2, 0, cx + bw / 2, 0, '#8a5a34', '#5b3a20');
+    rr(cx - bw / 2, topY, bw, by - topY, bw * 0.12); ctx.fill();
+    ctx.strokeStyle = 'rgba(60,36,18,0.45)'; ctx.lineWidth = 1.5;
+    for (const f of [-0.26, 0, 0.26]) { ctx.beginPath(); ctx.moveTo(cx + bw * f, topY + bw * 0.3); ctx.lineTo(cx + bw * f, by); ctx.stroke(); }
+    const capY = topY + bw * 0.08;   // drop the cap so it sits tight against the body, not a raised dome
+    ctx.fillStyle = '#a9784f'; ell(cx, capY, bw / 2, bw * 0.2); ctx.fill();
+    ctx.strokeStyle = '#7d5533'; ctx.lineWidth = 1.5;
+    for (const r of [0.72, 0.46, 0.22]) { ell(cx, capY, bw * 0.5 * r, bw * 0.2 * r); ctx.stroke(); }
+    ctx.strokeStyle = '#5b3a20'; ctx.lineWidth = 2; ell(cx, capY, bw / 2, bw * 0.2); ctx.stroke();
+  }
+
+  // ---------- pole generation ----------
+  const collapseDur = (lvl) => Math.max(T.collapseFloor, T.collapseBase - (lvl - 1) * T.collapsePerLvl);
+  function polW(lvl) {
+    const base = clamp(W * T.polWFrac, 64, 150);
+    const min = clamp(W * T.polWMin, 34, 74);
+    return Math.max(min, base - (lvl - 1) * (W * T.polWStep));
+  }
+
+  // Every generated pole is guaranteed reachable: we derive the vertical band from the
+  // physics itself. For a gap dx, the highest pole is what full power can reach and the
+  // lowest is what minimum power drops onto — pick a height inside that band (with insets
+  // so there's always tolerance), then clamp to keep it on screen.
+  function generatePole(prev, lvl) {
+    const gapFrac = clamp(T.gapBase + (lvl - 1) * T.gapPerLvl, T.gapBase, T.gapMax)
+                    + (Math.random() * T.gapJitter - T.gapJitter / 3);
+    const dx = gapFrac * W;
+    const tanT = Math.tan(THETA), cos2 = Math.cos(THETA) ** 2;
+    // dy of the arc as it recrosses the launch height's neighbourhood, per launch speed v.
+    const dyAt = (v) => -dx * tanT + 0.5 * G * dx * dx / (v * v * cos2);
+    const dyHigh = dyAt(VMAX);          // most negative → highest reachable pole
+    const dyLow = dyAt(VMIN);           // most positive → lowest reachable pole
+    const loDy = dyHigh + (dyLow - dyHigh) * 0.12;
+    const hiDy = dyHigh + (dyLow - dyHigh) * 0.88;
+    const screenLo = H * 0.24 - prev.topY, screenHi = H * 0.86 - prev.topY;
+    const lo = Math.max(loDy, screenLo), hi = Math.min(hiDy, screenHi);
+    const dy = lo < hi ? lo + Math.random() * (hi - lo)
+                       : clamp((loDy + hiDy) / 2, screenLo, screenHi);
+    return { x: prev.x + dx, topY: clamp(prev.topY + dy, H * 0.24, H * 0.86), w: polW(lvl) };
+  }
+  function ensurePoles() {
+    while (poles.length <= cur + 2) {
+      poles.push(generatePole(poles[poles.length - 1], poles.length));
+    }
+  }
+
+  // ---------- run flow ----------
+  // The menu isn't a separate screen — it's the real first pole with the chosen hopper posed
+  // on it, framed centre and zoomed out. Starting keeps that exact pole and zooms into it.
+  function placeMenuScene() {
+    poles = [{ x: W * 0.5, topY: H * 0.5, w: polW(1) }];
+    cur = 0;
+    hop.fx = poles[0].x; hop.fy = poles[0].topY; hop.vx = hop.vy = 0; hop.spin = 0;
+    camX = camTarget = poles[0].x - W * 0.5;   // pole centred on the menu
+    zoom = MENU_ZOOM; intro = 0; phase = IDLE;
+    standElapsed = 0; creaked = false; toppleT = 0;
+  }
+  function enterMenu() { state = MENU; placeMenuScene(); }
+
+  function startRun(fromMenu) {
+    state = PLAY; phase = IDLE;
+    score = 0; level = 1; combo = 0; power = 0;
+    dust = []; floaters = [];
+    if (fromMenu) {
+      // Keep the pole the hopper is already standing on, and zoom in from the menu framing.
+      poles = [{ x: poles[0].x, topY: poles[0].topY, w: polW(1) }];
+      intro = 0;                        // camera + zoom ease in via update()
+    } else {
+      // A retry snaps straight into the action — no menu, no zoom.
+      poles = [{ x: W * 0.5, topY: H * 0.5, w: polW(1) }];
+      intro = 1; zoom = 1;
+      camX = camTarget = poles[0].x - W * 0.22;
+    }
+    cur = 0; ensurePoles();
+    hop.fx = poles[0].x; hop.fy = poles[0].topY; hop.spin = 0; hop.vx = hop.vy = 0;
+    curCollapse = collapseDur(1) * T.firstPoleBonus;
+    standElapsed = 0; creaked = false; toppleT = 0;
+    runStartedAt = performance.now();
+    if (window.trackGame) trackGame('game_start', 'hopper');
+  }
+
+  function launch() {
+    stopChargeTone();
+    const v = VMIN + power * (VMAX - VMIN);
+    hop.vx = v * Math.cos(THETA);
+    hop.vy = -v * Math.sin(THETA);
+    hop.fx = poles[cur].x; hop.fy = poles[cur].topY; hop.prevFy = hop.fy;
+    hop.spin = 0; hop.spinRate = 5.5 + power * 8;
+    phase = FLY;
+    sndJump(power);
+  }
+
+  function land() {
+    const tgt = poles[cur + 1];
+    const offset = Math.abs(hop.fx - tgt.x) / (tgt.w / 2);
+    const perfect = offset < T.perfectBand;
+    const gapUsed = tgt.x - poles[cur].x;
+    const base = Math.max(1, Math.round(gapUsed / W * 10));
+    if (perfect) combo++; else combo = 0;
+    const mult = 1 + combo * T.comboStep;
+    const gain = Math.max(1, Math.round(base * mult));
+    score += gain;
+    if (score > best) { best = score; localStorage.setItem('hopper_best', String(best)); }
+
+    floaters.push({ x: hop.fx, y: tgt.topY - 8, vy: -46, life: 1, text: '+' + gain, color: '#059669' });
+    if (perfect) {
+      floaters.push({ x: hop.fx, y: tgt.topY - 34, vy: -30, life: 1.2, text: 'PERFECT', color: GOLD });
+      shake = 0.45; sndPerfect();
+    } else {
+      sndLand();
+    }
+    puff(hop.fx, tgt.topY, perfect ? 16 : 9);
+
+    cur++; level = cur + 1; ensurePoles();
+    hop.fx = poles[cur].x;              // slide to centre for a clean next launch
+    hop.spin = 0;
+    phase = IDLE; power = 0;
+    curCollapse = collapseDur(level); standElapsed = 0; creaked = false;
+    landSquash = 1;
+  }
+
+  function die(cause) {
+    if (phase === FALL) return;
+    deathCause = cause;
+    phase = FALL; toppleT = 0;
+    stopChargeTone();
+    if (cause === 'slow') { hop.vx = (Math.random() - 0.5) * 40; hop.vy = 30; hop.spinRate = (Math.random() - 0.5) * 3; }
+    shake = 1;
+    sndFall();
+  }
+
+  function finishDeath() {
+    state = DEAD; deadAt = performance.now();
+    if (window.trackGame) {
+      trackGame('game_end', 'hopper', {
+        score,
+        duration_sec: Math.round((performance.now() - runStartedAt) / 1000),
+      });
+    }
+  }
+
+  // ---------- particles ----------
+  function puff(wx, y, n) {
+    for (let i = 0; i < n; i++) {
+      const a = Math.PI + (Math.random() - 0.5) * Math.PI * 1.1;   // sideways/upward spray
+      const sp = 40 + Math.random() * 130;
+      dust.push({
+        wx, y: y - 2, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 20,
+        r: 2 + Math.random() * 4, life: 1, decay: 1.4 + Math.random() * 1.2,
+      });
+    }
+  }
+
+  // ---------- input ----------
+  function press() {
+    ac();
+    if (state === MENU) { startRun(true); return; }
+    if (state === DEAD) { if (performance.now() - deadAt > 600) startRun(false); return; }
+    if (state === PLAY && phase === IDLE) { phase = CHARGE; power = 0; startChargeTone(); }
+  }
+  function release() {
+    if (state === PLAY && phase === CHARGE) launch();
+  }
+  window.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    // On the menu, a tap on a character card picks it instead of starting the run.
+    if (state === MENU) {
+      const r = cvs.getBoundingClientRect();
+      const lx = e.clientX - r.left, ly = e.clientY - r.top;
+      for (const s of charSlots) {
+        if (lx >= s.x && lx <= s.x + s.w && ly >= s.y && ly <= s.y + s.h) { pickChar(s.id); return; }
+      }
+    }
+    press();
+  }, { passive: false });
+  window.addEventListener('pointerup', (e) => { e.preventDefault(); release(); }, { passive: false });
+  window.addEventListener('pointercancel', release);
+  window.addEventListener('blur', () => { if (phase === CHARGE) launch(); });
+  window.addEventListener('keydown', (e) => {
+    if (state === MENU && (e.code === 'ArrowLeft' || e.code === 'ArrowRight')) {
+      e.preventDefault(); cycleChar(e.code === 'ArrowRight' ? 1 : -1); return;
+    }
+    if (e.code === 'Space' || e.code === 'Enter') { e.preventDefault(); if (!e.repeat) press(); }
+  });
+  window.addEventListener('keyup', (e) => {
+    if (e.code === 'Space' || e.code === 'Enter') { e.preventDefault(); release(); }
+  });
+  window.addEventListener('contextmenu', (e) => e.preventDefault());
+  const band = document.getElementById('band');
+  band.addEventListener('pointerdown', (e) => e.stopPropagation());
+  band.addEventListener('pointerup', (e) => e.stopPropagation());
+
+  // ---------- update ----------
+  function update(dt) {
+    shake = Math.max(0, shake - dt * 3);
+    landSquash = Math.max(0, landSquash - dt * 4);
+    bankFx = Math.max(0, bankFx - dt * 2.6);
+
+    for (const d of dust) {
+      d.vy += 260 * dt; d.vx *= 0.94;
+      d.wx += d.vx * dt; d.y += d.vy * dt; d.life -= dt * d.decay;
+    }
+    dust = dust.filter(d => d.life > 0);
+    for (const f of floaters) { f.y += f.vy * dt; f.vy *= 0.94; f.life -= dt * 0.85; }
+    floaters = floaters.filter(f => f.life > 0);
+
+    if (state === PLAY && intro < 1) intro = Math.min(1, intro + dt / 0.6);
+
+    if (state === PLAY) {
+      if (phase === IDLE || phase === CHARGE) {
+        // The clock only runs while you're standing on it. Once airborne, the old pole's
+        // collapse is just theatre — it can't kill you any more.
+        standElapsed += dt;
+        const frac = standElapsed / curCollapse;
+        if (!creaked && frac > 0.68) { creaked = true; sndCreak(); }
+        if (frac >= 1) { die('slow'); }
+        if (phase === CHARGE) { power = Math.min(1, power + dt / T.chargeTime); updateChargeTone(power); }
+      } else if (phase === FLY) {
+        hop.prevFy = hop.fy;
+        hop.vy += G * dt;
+        hop.fx += hop.vx * dt; hop.fy += hop.vy * dt; hop.spin += hop.spinRate * dt;
+        const tgt = poles[cur + 1];
+        const onSpan = hop.fx >= tgt.x - tgt.w / 2 && hop.fx <= tgt.x + tgt.w / 2;
+        if (hop.vy > 0 && onSpan && hop.prevFy <= tgt.topY && hop.fy >= tgt.topY) {
+          land();
+        } else if (hop.fy > Math.max(poles[cur].topY, tgt.topY) + H * 0.28) {
+          // A quarter-screen below the lower of the two pole tops and still not landed —
+          // you're in the void. Let momentum carry the fall.
+          die('miss');
+        }
+      } else if (phase === FALL) {
+        hop.vy += G * dt;
+        hop.fx += hop.vx * dt; hop.fy += hop.vy * dt; hop.spin += hop.spinRate * dt;
+        toppleT += dt;
+        if (hop.fy > H + CH * 3) finishDeath();
+      }
+    }
+
+    // Camera: on the menu the pole sits centre-screen, zoomed out; a run eases it to the
+    // gameplay framing (pole a fifth of the way in) while zooming in. While falling, chase
+    // the hopper so the death stays on screen.
+    if (poles[cur]) {
+      const e = state === MENU ? 0 : easeInOut(intro);
+      if (phase === FALL) camTarget = hop.fx - W * 0.4;
+      else camTarget = poles[cur].x - W * lerp(0.5, 0.22, e);
+      camX += (camTarget - camX) * Math.min(1, 9 * dt);
+      zoom = lerp(MENU_ZOOM, 1, e);
+    }
+  }
+
+  // ---------- draw ----------
+  // Sky fills the whole canvas in screen space, so the zoom-out margins never show through.
+  function drawSky() {
+    const grd = ctx.createLinearGradient(0, 0, 0, H);
+    grd.addColorStop(0, '#f5f7fa');
+    grd.addColorStop(1, '#e7ebf1');
+    ctx.fillStyle = grd;
+    ctx.fillRect(-W, -H, W * 3, H * 3);
+  }
+  // Faint parallax pillars for depth. Deterministic from index, so no state to carry.
+  function drawParallax() {
+    const hash = (i) => { const s = Math.sin(i * 12.9898) * 43758.5453; return s - Math.floor(s); };
+    const par = 0.4, spacing = W * 0.46;
+    const i0 = Math.floor((camX * par - W) / spacing);
+    const i1 = Math.ceil((camX * par + W) / spacing);
+    ctx.fillStyle = 'rgba(24,26,33,0.035)';
+    for (let i = i0; i <= i1; i++) {
+      const sx = i * spacing - camX * par;
+      const w = W * (0.06 + hash(i) * 0.05);
+      const topY = H * (0.42 + hash(i * 3.1) * 0.28);
+      rr(sx - w / 2, topY, w, H * 1.6 - topY, w * 0.3); ctx.fill();
+    }
+  }
+
+  function drawPole(pole, isCurrent) {
+    const sx = S2W(pole.x);
+    if (sx < -pole.w * 2 || sx > W + pole.w * 2) return;
+    const left = sx - pole.w / 2;
+
+    ctx.save();
+    // The pole we're dying on topples over its own base.
+    if (isCurrent && phase === FALL && deathCause === 'slow') {
+      const ang = Math.min(1.3, toppleT * 2.2);
+      ctx.translate(sx, H);
+      ctx.rotate(ang * (hop.vx >= 0 ? 1 : -1));
+      ctx.translate(-sx, -H);
+    }
+    // A collapsing pole shivers in its last moments.
+    let jit = 0;
+    if (isCurrent && (phase === IDLE || phase === CHARGE)) {
+      const frac = standElapsed / curCollapse;
+      if (frac > 0.68) jit = (Math.random() - 0.5) * (frac - 0.68) * 26;
+    }
+
+    // the timber (drawn well past the bottom edge so the zoom-out never lifts its base)
+    drawBeam(sx + jit, pole.topY, pole.w, H * 1.6);
+
+    // the fuse: a depleting bar across the current pole's cap, greening to red as it burns
+    if (state === PLAY && isCurrent && (phase === IDLE || phase === CHARGE)) {
+      const frac = clamp(standElapsed / curCollapse, 0, 1);
+      const left2 = sx + jit - pole.w * 0.36, wBar = pole.w * 0.72;
+      ctx.fillStyle = 'rgba(0,0,0,0.28)';
+      rr(left2, pole.topY - pole.w * 0.05, wBar, 4, 2); ctx.fill();
+      const hue = lerp(140, 4, frac * frac);
+      ctx.fillStyle = `hsl(${hue},72%,52%)`;
+      rr(left2, pole.topY - pole.w * 0.05, wBar * (1 - frac), 4, 2); ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  function drawHopper() {
+    if (state !== PLAY && state !== MENU) return;
+    // A gentle breathing bob while it waits on a pole (menu or between jumps).
+    const bob = (phase === IDLE || phase === CHARGE) ? Math.sin(performance.now() / 380) * 1.5 : 0;
+    const sx = S2W(hop.fx), fy = hop.fy + (phase === CHARGE ? 0 : bob);
+    ctx.save();
+    ctx.translate(sx, fy);
+
+    // squash/stretch: crouch as it charges, snap tall on landing, spin in the air
+    let scx = 1, scy = 1;
+    if (phase === CHARGE) { scy = 1 - power * 0.42; scx = 1 + power * 0.30; }
+    else if (landSquash > 0) { scy = 1 - landSquash * 0.28; scx = 1 + landSquash * 0.22; }
+    if (phase === FLY || phase === FALL) ctx.rotate(hop.spin);
+    ctx.scale(scx, scy);
+
+    // contact shadow while grounded (drawn here, not inside the sprite, so it stays put
+    // on the ground instead of tumbling with the hopper mid-flight)
+    if (phase === IDLE || phase === CHARGE) {
+      ctx.fillStyle = 'rgba(0,0,0,0.12)';
+      ctx.beginPath(); ctx.ellipse(0, 2, CH * 0.44, CH * 0.09, 0, 0, Math.PI * 2); ctx.fill();
+    }
+
+    // the chosen hopper
+    (CHARS[selectedChar] || CHARS.frog)(CH);
+    ctx.restore();
+  }
+
+  // The aim helper. An arrow always shows launch direction and strength; a dotted preview
+  // of the full arc appears early and fades away by the sixth pole — it teaches the mapping,
+  // then trusts you to have learned it.
+  function drawAim() {
+    if (phase !== CHARGE) return;
+    const sx = S2W(hop.fx), fy = hop.fy - CH * 0.55;
+    const dirx = Math.cos(THETA), diry = -Math.sin(THETA);
+    const len = CH * 0.6 + power * CH * 1.6;
+    const ex = sx + dirx * len, ey = fy + diry * len;
+
+    ctx.strokeStyle = ACCENT; ctx.lineWidth = 3; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(sx, fy); ctx.lineTo(ex, ey); ctx.stroke();
+    // arrowhead
+    const ah = 7;
+    ctx.beginPath();
+    ctx.moveTo(ex, ey);
+    ctx.lineTo(ex - dirx * ah - diry * ah * 0.7, ey - diry * ah + dirx * ah * 0.7);
+    ctx.moveTo(ex, ey);
+    ctx.lineTo(ex - dirx * ah + diry * ah * 0.7, ey - diry * ah - dirx * ah * 0.7);
+    ctx.stroke();
+
+    const help = clamp(1 - (level - 1) / 5, 0, 1);
+    if (help > 0.01) {
+      const v = VMIN + power * (VMAX - VMIN);
+      let x = hop.fx, y = hop.fy, vx = v * Math.cos(THETA), vy = -v * Math.sin(THETA);
+      ctx.fillStyle = `rgba(24,26,33,${0.28 * help})`;
+      for (let t = 0; t < 130; t++) {
+        vy += G * (1 / 60); x += vx / 60; y += vy / 60;
+        if (y > Math.max(poles[cur].topY, poles[cur + 1].topY) + H * 0.3) break;
+        if (t % 4 === 0) { ctx.beginPath(); ctx.arc(S2W(x), y, 2, 0, Math.PI * 2); ctx.fill(); }
+      }
+    }
+  }
+
+  // ---------- arcade type ----------
+  function type(text, x, y, color, size, weight, sp, align) {
+    if ('letterSpacing' in ctx) ctx.letterSpacing = (sp === undefined ? 2 : sp) + 'px';
+    ctx.font = `${weight || 700} ${size}px ui-monospace, monospace`;
+    ctx.fillStyle = color;
+    ctx.textAlign = align || 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(text, x, y);
+    if ('letterSpacing' in ctx) ctx.letterSpacing = '0px';
+  }
+  function hairline(y, w, alpha) {
+    ctx.strokeStyle = ink(alpha); ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(W / 2 - w / 2, y + 0.5); ctx.lineTo(W / 2 + w / 2, y + 0.5); ctx.stroke();
+  }
+  const blink = () => ((performance.now() / 460) | 0) % 2 === 0;
+  function statStrip(items, y) {
+    const gap = Math.min(110, (W - 40) / items.length);
+    items.forEach(([k, v, color], i) => {
+      const x = W / 2 + (i - (items.length - 1) / 2) * gap;
+      type(k, x, y, ink(0.32), 9, 700, 1.5);
+      type(v, x, y + 21, color || ink(0.82), 15, 700, 0);
+      if (i < items.length - 1) {
+        ctx.strokeStyle = ink(0.11); ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.moveTo((x + gap / 2) + 0.5, y - 7); ctx.lineTo((x + gap / 2) + 0.5, y + 29); ctx.stroke();
+      }
+    });
+  }
+
+  function drawHud() {
+    type(String(score), 26, 36, ink(0.92), 30, 800, 0, 'left');
+    type('SCORE', 26, 62, ink(0.34), 9, 700, 1.5, 'left');
+    type('x' + (1 + combo * T.comboStep).toFixed(2), W - 26, 36, combo > 0 ? GOLD : ink(0.35), 16, 700, 0, 'right');
+    type('POLE ' + level, W - 26, 62, ink(0.34), 9, 700, 1.5, 'right');
+
+    const promptY = H - 26;
+    type(phase === CHARGE ? 'RELEASE TO LEAP' : 'HOLD TO CHARGE', W / 2, promptY, ink(0.4), 10, 700, 2);
+  }
+
+  function drawMenu() {
+    const cy = H * 0.15;
+    type('HOPPER', W / 2, cy, ink(0.93), 52, 800, 8);
+    hairline(cy + 30, 230, 0.14);
+    type('HOLD TO CHARGE  ·  LEAP BEFORE IT FALLS', W / 2, cy + 52, ink(0.42), 10, 700, 2);
+    if (blink()) type('PRESS SPACE TO START', W / 2, cy + 88, ink(0.85), 13, 800, 3);
+
+    // --- character switcher along the bottom ---
+    const n = CHAR_ORDER.length;
+    const chip = Math.min(54, (W - 24) / n);
+    const rowY = H - 44;
+    const x0 = W / 2 - (chip * n) / 2;
+    charSlots = [];
+    for (let i = 0; i < n; i++) {
+      const id = CHAR_ORDER[i];
+      const left = x0 + chip * i + 3, top = rowY - chip / 2, w = chip - 6, h = chip;
+      const sel = id === selectedChar;
+      ctx.fillStyle = sel ? 'rgba(249,115,22,0.14)' : 'rgba(24,26,33,0.045)';
+      rr(left, top, w, h, 8); ctx.fill();
+      ctx.strokeStyle = sel ? ACCENT : ink(0.10); ctx.lineWidth = sel ? 2 : 1;
+      rr(left, top, w, h, 8); ctx.stroke();
+      ctx.save();
+      ctx.translate(left + w / 2, top + h * 0.8);
+      (CHARS[id] || CHARS.frog)(chip * 0.56);
+      ctx.restore();
+      charSlots.push({ id, x: left, y: top, w, h });
+    }
+    type('CHOOSE YOUR HOPPER  ·  ' + CHAR_NAME[selectedChar] + '  ·  ← →', W / 2, rowY - chip * 0.74, ACCENT, 9, 700, 1.5);
+    if (best > 0) type('BEST  ' + best, W / 2, rowY - chip * 0.74 - 18, ink(0.32), 9, 700, 2);
+  }
+
+  function drawGameOver() {
+    const cy = H * 0.30;
+    const isBest = score >= best && score > 0;
+    ctx.globalAlpha = Math.min(1, (performance.now() - deadAt) / 220);
+    type(deathCause === 'slow' ? 'TIMBER!' : 'MISSED!', W / 2, cy - 44, RED, 48, 800, 6);
+    type(deathCause === 'slow' ? 'TOO SLOW — THE POLE GAVE WAY' : 'MISSED THE LANDING',
+         W / 2, cy - 8, ink(0.34), 9, 700, 2);
+    hairline(cy + 16, 200, 0.13);
+    type(String(score), W / 2, cy + 66, ink(0.93), 72, 800, 0);
+    type(isBest ? '★  NEW BEST' : 'FINAL SCORE', W / 2, cy + 112, isBest ? GOLD : ink(0.36), 9, 700, 2);
+    statStrip([['POLES', String(cur)], ['BEST', String(best)]], cy + 158);
+    if (blink()) type('PRESS SPACE', W / 2, cy + 220, ink(0.85), 13, 800, 3);
+    ctx.globalAlpha = 1;
+  }
+
+  function draw() {
+    ctx.save();
+    if (shake > 0) ctx.translate((Math.random() - 0.5) * shake * 22, (Math.random() - 0.5) * shake * 22);
+
+    drawSky();
+
+    // --- world, scaled around the hopper so the start zooms into the action ---
+    ctx.save();
+    const fpx = S2W(hop.fx), fpy = hop.fy;
+    if (Math.abs(zoom - 1) > 0.001) { ctx.translate(fpx, fpy); ctx.scale(zoom, zoom); ctx.translate(-fpx, -fpy); }
+
+    drawParallax();
+    // poles: draw the current one last of the near set so its fuse/topple sits on top
+    for (let i = 0; i < poles.length; i++) if (i !== cur) drawPole(poles[i], false);
+    if (poles[cur]) drawPole(poles[cur], true);
+    drawAim();
+    drawHopper();
+
+    for (const d of dust) {
+      ctx.globalAlpha = Math.max(0, d.life);
+      ctx.fillStyle = '#9aa3b2';
+      ctx.beginPath(); ctx.arc(S2W(d.wx), d.y, d.r * d.life, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+    for (const f of floaters) {
+      ctx.globalAlpha = Math.max(0, f.life);
+      ctx.fillStyle = f.color;
+      ctx.font = '700 22px ui-monospace, monospace';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(f.text, S2W(f.x), f.y);
+    }
+    ctx.globalAlpha = 1;
+    ctx.restore();
+
+    // --- UI in screen space: HUD fades in as the menu copy fades out ---
+    if (state === PLAY) {
+      ctx.globalAlpha = clamp((intro - 0.4) / 0.6, 0, 1);
+      drawHud();
+      ctx.globalAlpha = 1;
+    }
+    if (state === MENU || (state === PLAY && intro < 0.5)) {
+      ctx.globalAlpha = state === MENU ? 1 : 1 - intro / 0.5;
+      drawMenu();
+      ctx.globalAlpha = 1;
+    }
+    if (state === DEAD) drawGameOver();
+
+    ctx.restore();
+  }
+
+  // ---------- loop ----------
+  resize();
+  enterMenu();
+  let last = performance.now();
+  function frame(now) {
+    const dt = Math.min((now - last) / 1000, 0.05);
+    last = now;
+    update(dt);
+    draw();
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
