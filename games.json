@@ -14,5 +14,13 @@
     "emoji": "⛵",
     "gradient": "linear-gradient(135deg, #0e7490, #164e63)",
     "line": "A one-input physics game about trimming a boat and your nerves."
+  },
+  {
+    "slug": "hopper",
+    "title": "Hopper",
+    "tagline": "hold to charge · leap before it falls",
+    "emoji": "🦘",
+    "gradient": "linear-gradient(135deg, #ca8a04, #92400e)",
+    "line": "Pick your hero and leap between poles that won’t wait — charge, release, land."
   }
 ]
