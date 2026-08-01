@@ -85,8 +85,16 @@ want sum/average); `game_name` is a dimension (you filter/group by it).
    }
    ```
    Use the same `<name>` consistently as the `game_name` value.
+
+   If the game dilates time (hitstop, slow motion) or can be left in a
+   background tab mid-run, log the run's own accumulated clock instead of
+   wall time — otherwise `duration_sec` reports a longer run than the player
+   actually played, and disagrees with any timer shown on screen. `bait`
+   passes `Math.round(elapsed)` for exactly this reason.
 4. Add an entry to `games.json` in the repo root — this is what the
-   homepage fetches to render the game cards:
+   homepage fetches to render the game cards. Keep `line` to **one short
+   sentence** — the card is narrow, and every other game reads as
+   "A one-button game about X and Y (self-deprecating aside)":
    ```json
    {
      "slug": "<name>",

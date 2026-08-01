@@ -21,6 +21,14 @@
     "tagline": "hold to charge · leap before it falls",
     "emoji": "🦘",
     "gradient": "linear-gradient(135deg, #ca8a04, #92400e)",
-    "line": "Pick your hero and leap between poles that won’t wait — charge, release, land."
+    "line": "A one-button game about leaping onto poles that are already giving up (so am I, around score 12)."
+  },
+  {
+    "slug": "bait",
+    "title": "Bait",
+    "tagline": "you are the food · make them crash",
+    "emoji": "🐍",
+    "gradient": "linear-gradient(135deg, #16a34a, #14532d)",
+    "line": "A no-weapon arcade game about being the food and baiting snakes into crashing (they still win)."
   }
 ]

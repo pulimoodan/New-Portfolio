@@ -1,0 +1,1407 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<script src="/scripts/analytics.js"></script>
+<title>BAIT — you are the food</title>
+<style>
+  :root { color-scheme: light; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    height: 100%; overflow: hidden;
+    background: #eef0f3;
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    -webkit-user-select: none; user-select: none;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: none;
+  }
+  #wrap {
+    position: fixed; inset: 10px; bottom: 44px;
+    display: grid; place-items: center;
+    border: 1px solid #dcdee3; border-radius: 10px;
+    overflow: hidden;
+    background: #ffffff;
+  }
+  canvas { display: block; }
+  #band {
+    position: fixed; left: 10px; right: 10px; bottom: 0; height: 44px;
+    display: flex; align-items: center; justify-content: center; gap: 6px;
+    font-size: 10px; font-weight: 700; letter-spacing: 2px;
+    color: rgba(24,26,33,0.4);
+    touch-action: auto;
+  }
+  #band a { color: rgba(24,26,33,0.85); text-decoration: underline; }
+</style>
+</head>
+<body>
+<div id="wrap"><canvas id="c"></canvas></div>
+<div id="band">BREWED CAREFULLY BY <a href="../../index.html">AKBAR ALI</a></div>
+<script>
+(() => {
+  'use strict';
+
+  // ---------- tuning ----------
+  // The inversion is the whole game: you are the food, and you never attack. Every number
+  // here exists to make one thing true — a snake moves in straight lines and can only turn on
+  // a grid, so anything it can't corner around (another snake, its own body) is a weapon you
+  // aim by choosing where to stand. You're faster than all of them except RED and you move
+  // freely rather than on the grid, which means you can always run; you just can't run and
+  // score at the same time.
+  const T = {
+    playerR: 15,
+    playerSpeed: 196,
+    playerAccel: 1600,         // reach top speed in ~an eighth of a second. Enough weight to feel like a body.
+    dashSpeed: 580, dashTime: 0.15, dashCd: 1.05,
+
+    // Small numbers on purpose. A kill is worth 10, not 100 — when the score inflates into
+    // the tens of thousands every number on screen stops meaning anything and one lucky
+    // pile-up outweighs a whole careful run.
+    fruitR: 9, fruitTarget: 5, fruitScore: 1, fruitCap: 40,
+
+    spacing: 7,                // px between stored body points; the body IS the head's path
+    growPerFruit: 8,           // what a snake eats is what eventually kills it
+    maxLen: 130,
+    neckSkip: 9,               // points behind the head that can't self-collide
+    chainWindow: 3.6, chainCap: 8,
+
+    // The ramp, in place of levels: more snakes on the board, arriving sooner, moving faster.
+    // They kill each other fast, so the refill has to be quick — an empty arena is a boring
+    // arena, and the whole point is a crowd of them getting in each other's way.
+    liveBase: 3, livePer: 10, liveCap: 9,
+    spawnBase: 4, spawnMin: 1.3, spawnRamp: 40,
+    speedRamp: 300, speedMax: 0.55,
+  };
+
+  // Snakes move like snakes: dead-straight lines and hard 90° turns, one decision per grid
+  // cell, never a reverse. You move freely. That asymmetry IS the game — you can curve, they
+  // can only choose a corner, and a corner chosen badly is a corner they die in.
+  //
+  // Six of them, straight out of the design doc, separated by how they FAIL rather than how
+  // they chase:
+  //   look        → how many cells ahead it checks for something lethal.
+  //   care        → how much that lookahead weighs against wanting you. Its nerve.
+  //   space       → how much it values having somewhere left to go. This is the real
+  //                 intelligence stat: a snake with none of it walks into its own coils.
+  //   straight    → bonus for carrying on. High = lumbering and predictable, low = cuts corners.
+  //   minStraight → cells it must commit to before it may turn again. High = can't corner.
+  //   lead        → seconds of your own velocity it aims ahead of you (0 = pure tail-chase).
+  //   flank       → aims at a cut-off point beside you instead of at you.
+  const TYPES = {
+    green:  { name:'GREEN',  color:'#16a34a', dark:'#0f7038', speed:142, len:36, r:11.5, look:1, care:0.55, space:0,   straight:0.45, minStraight:1, lead:0,    flank:0, hunger:1.0, unlock:0,  score:10 },
+    // Lemon, not amber — an amber snake and an orange player are the same colour at a glance,
+    // and the one thing that must never be ambiguous is which of these things is you.
+    yellow: { name:'YELLOW', color:'#facc15', dark:'#a16207', speed:176, len:34, r:11.5, look:2, care:0.70, space:0.5, straight:0.10, minStraight:1, lead:0.30, flank:0, hunger:1.1, unlock:14, score:12 },
+    blue:   { name:'BLUE',   color:'#2563eb', dark:'#1a47a8', speed:168, len:40, r:12,   look:4, care:1.00, space:1.4, straight:0.28, minStraight:1, lead:0.16, flank:0, hunger:0.8, unlock:30, score:15 },
+    red:    { name:'RED',    color:'#dc2626', dark:'#9c1919', speed:246, len:30, r:12.5, look:1, care:0.35, space:0,   straight:0.6,  minStraight:3, lead:0.08, flank:0, hunger:0.5, unlock:48, score:18, lunge:true },
+    silver: { name:'SILVER', color:'#64748b', dark:'#43505f', speed:192, len:40, r:12,   look:3, care:0.80, space:1.0, straight:0.24, minStraight:1, lead:0.95, flank:0, hunger:0.7, unlock:70, score:20 },
+    purple: { name:'PURPLE', color:'#9333ea', dark:'#6a22aa', speed:184, len:44, r:12,   look:3, care:0.85, space:1.1, straight:0.22, minStraight:1, lead:0.45, flank:1, hunger:0.6, unlock:92, score:23 },
+  };
+  const TYPE_LIST = Object.keys(TYPES);
+
+  // ---------- canvas ----------
+  const cvs = document.getElementById('c');
+  const ctx = cvs.getContext('2d');
+  let W = 0, H = 0, DPR = 1, S = 1;
+  // Everything in T is written for a 620px arena and multiplied by S, so a phone gets the
+  // same relative chase — smaller snakes, shorter distances, identical geometry.
+  let arena = { x0: 0, y0: 0, x1: 0, y1: 0 };
+  const IS_TOUCH = window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
+
+  function resize() {
+    DPR = Math.min(window.devicePixelRatio || 1, 2);
+    const wrap = document.getElementById('wrap');
+    W = wrap.clientWidth; H = wrap.clientHeight;
+    cvs.width = W * DPR; cvs.height = H * DPR;
+    cvs.style.width = W + 'px'; cvs.style.height = H + 'px';
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    // Scale off the SHORT edge, but not against the desktop reference — a 340px-wide phone
+    // measured against 620 puts everything at half size, which is a big empty board covered
+    // in specks. Portrait gets its own much smaller reference so the pieces come out chunky;
+    // the board then simply holds fewer of them (see boardCap/fruitQuota).
+    // The reference the short edge is measured against slides from 370 on a phone to 620 on
+    // anything desktop-sized. A hard branch between the two put a 430px screen at a LARGER
+    // scale than a 1546px one, which is the opposite of the point; interpolating keeps it
+    // monotonic, so bigger screen always means finer board.
+    const short = Math.min(W, H);
+    S = clamp(short / lerp(370, 620, clamp((short - 320) / 300, 0, 1)), 0.62, 1.35);
+    buildGrid();
+    if (booted) keepInside();
+  }
+
+  // ---------- the grid ----------
+  // Invisible, but everything a snake does happens on it: it walks node to node, and only at
+  // a node may it turn. Cell size is tied to body width, so two parallel runs of snake leave
+  // a gap you can just about squeeze through — which is the whole geometry of baiting one.
+  //
+  // The edges aren't walls, they're seams: walk off the right and you come back on the left.
+  // Nothing here can be cornered, so a death is always a shape somebody walked into.
+  let CX = 28, CY = 28, CELL = 28, GW = 0, GH = 0;
+  const DIRS = [[1, 0], [0, 1], [-1, 0], [0, -1]];      // E, S, W, N
+  let occ = new Set();
+  // The board is the whole frame, corner to corner — no margin, no inner border. To make a
+  // whole number of cells fit exactly, the cell is allowed to be a hair off square rather
+  // than leaving a strip of dead space, and the seam a snake wraps through is then precisely
+  // the edge you can see.
+  function buildGrid() {
+    // The cell has to grow with the snakes — a lane narrower than the body it carries turns
+    // two parallel runs into one solid mass and there's nowhere left to read the board.
+    const target = Math.max(24, Math.min(52, Math.round(34 * S)));
+    GW = Math.max(4, Math.round(W / target));
+    GH = Math.max(4, Math.round(H / target));
+    CX = W / GW; CY = H / GH; CELL = (CX + CY) / 2;
+    arena = { x0: 0, y0: 0, x1: W, y1: H };
+  }
+  // Every distance is measured across the seam as well as through the middle, and the
+  // shorter one wins — otherwise a snake two steps away round the edge reads as the furthest
+  // thing on the board.
+  function wdx(a, b) { const w = aw(); let d = a - b; if (d > w / 2) d -= w; else if (d < -w / 2) d += w; return d; }
+  function wdy(a, b) { const h = ah(); let d = a - b; if (d > h / 2) d -= h; else if (d < -h / 2) d += h; return d; }
+  function wrapPos(o) {
+    const w = aw(), h = ah();
+    if (o.x < arena.x0) o.x += w; else if (o.x >= arena.x1) o.x -= w;
+    if (o.y < arena.y0) o.y += h; else if (o.y >= arena.y1) o.y -= h;
+  }
+  function wdist2(ax, ay, bx, by) { const dx = wdx(ax, bx), dy = wdy(ay, by); return dx * dx + dy * dy; }
+  const wdist = (ax, ay, bx, by) => Math.sqrt(wdist2(ax, ay, bx, by));
+  const nodeX = (i) => CX * (i + 0.5);
+  const nodeY = (j) => CY * (j + 0.5);
+  const cellX = (x) => Math.round(x / CX - 0.5);
+  const cellY = (y) => Math.round(y / CY - 0.5);
+  // A phone's board is a fraction of a desktop's in cells, so the crowd and the fruit have to
+  // be measured in cells rather than hard-coded — otherwise nine snakes and five fruit on a
+  // 11-wide board is wall-to-wall snake with nowhere to stand.
+  const boardCap = () => Math.max(3, Math.round(GW * GH / 70));
+  const fruitQuota = () => clamp(Math.round(GW * GH / 110), 3, T.fruitTarget);
+
+  const wrapI = (i) => ((i % GW) + GW) % GW;
+  const wrapJ = (j) => ((j % GH) + GH) % GH;
+  const ckey = (i, j) => wrapI(i) * 4096 + wrapJ(j);
+  const snapX = (x) => nodeX(wrapI(cellX(x)));
+  const snapY = (y) => nodeY(wrapJ(cellY(y)));
+  // One pass a frame marks every cell a body lies in. Each snake's own first points are left
+  // out — it must not read its own neck as a wall — but the heads go in, so they mostly stop
+  // driving into each other head-first. Mostly.
+  function buildOcc() {
+    occ.clear();
+    for (const s of snakes) {
+      if (s.dead) continue;
+      occ.add(ckey(cellX(s.x), cellY(s.y)));
+      for (let i = 3; i < s.pts.length; i++) occ.add(ckey(cellX(s.pts[i].x), cellY(s.pts[i].y)));
+    }
+  }
+  window.addEventListener('resize', resize);
+
+  // ---------- audio ----------
+  // Nothing makes a sound until the player has touched something — the attract screen is
+  // live from the first frame, and a browser will rightly refuse an AudioContext before then.
+  let AC = null;
+  function ac() {
+    if (!AC) { AC = new (window.AudioContext || window.webkitAudioContext)(); decodeScream(); }
+    if (AC.state === 'suspended') AC.resume();
+    return AC;
+  }
+
+  // ---------- the scream ----------
+  // A real recording, because no amount of synthesis was going to beat one. The bytes are
+  // fetched at load; decoding waits for the AudioContext, which can't exist before the player
+  // touches something. The clip runs ~11s and takes a breath around 3.1s, so the loop is
+  // pinned to the sustained stretch before that — looping across the gap would turn one
+  // continuous scream into a stutter.
+  const SCREAM_URL = 'scream.m4a', SCREAM_IN = 0.85, SCREAM_OUT = 2.95;
+  let screamBytes = null, screamBuf = null, screamFailed = false;
+  fetch(SCREAM_URL)
+    .then(r => (r.ok ? r.arrayBuffer() : Promise.reject(new Error(r.status))))
+    .then(b => { screamBytes = b; decodeScream(); })
+    .catch(() => { screamFailed = true; });
+  function decodeScream() {
+    if (!AC || screamBuf || !screamBytes) return;
+    // slice() because decodeAudioData detaches the buffer it's handed, and a failed decode
+    // shouldn't also destroy the only copy of the bytes.
+    AC.decodeAudioData(screamBytes.slice(0))
+      .then(b => { screamBuf = b; })
+      .catch(() => { screamFailed = true; });   // e.g. a browser without AAC — fall back to synth
+  }
+  function beep(freq, dur, vol, type, freq2) {
+    if (!AC) return;
+    const a = ac();
+    const o = a.createOscillator(), g = a.createGain();
+    o.type = type || 'triangle';
+    o.frequency.setValueAtTime(freq, a.currentTime);
+    if (freq2) o.frequency.exponentialRampToValueAtTime(freq2, a.currentTime + dur);
+    g.gain.setValueAtTime(vol, a.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.0001, a.currentTime + dur);
+    o.connect(g); g.connect(a.destination);
+    o.start(); o.stop(a.currentTime + dur + 0.02);
+  }
+  function noise(dur, vol, hz, q, sweepTo) {
+    if (!AC) return;
+    const a = ac();
+    const buf = a.createBuffer(1, Math.max(1, (a.sampleRate * dur) | 0), a.sampleRate);
+    const d = buf.getChannelData(0);
+    for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / d.length);
+    const src = a.createBufferSource(); src.buffer = buf;
+    const f = a.createBiquadFilter(); f.type = 'bandpass'; f.frequency.value = hz; f.Q.value = q || 0.8;
+    if (sweepTo) f.frequency.exponentialRampToValueAtTime(sweepTo, a.currentTime + dur);
+    const g = a.createGain(); g.gain.value = vol;
+    g.gain.exponentialRampToValueAtTime(0.0001, a.currentTime + dur);
+    src.connect(f); f.connect(g); g.connect(a.destination);
+    src.start();
+  }
+  const sndEat   = (n) => beep(540 + Math.min(8, n) * 40, 0.07, 0.11, 'square');
+  const sndDash  = () => noise(0.16, 0.11, 900, 0.7, 2600);
+  const sndHiss  = () => noise(0.36, 0.08, 2600, 1.6, 5200);    // the tell before a RED lunge
+  const sndNear  = () => noise(0.2, 0.06, 1500, 2.2, 400);
+  const sndSpawn = () => beep(210, 0.18, 0.07, 'square', 95);
+  // A kill should land like an impact, not a notification: a thud, debris, and a chime that
+  // climbs with the chain.
+  const sndKill  = (chain) => {
+    noise(0.32, 0.2, 420, 0.6, 90);
+    beep(120, 0.24, 0.16, 'sawtooth', 46);
+    beep(500 + Math.min(6, chain) * 130, 0.16, 0.12, 'triangle', 900 + Math.min(6, chain) * 200);
+  };
+  const sndDie   = () => { noise(0.6, 0.22, 700, 0.5, 60); beep(300, 0.7, 0.18, 'sawtooth', 40); };
+  // Spider sense: a tiny cartoon scream. A sawtooth glide pushed through two vowel formants
+  // with a wobble on top — close enough to "AAAH!" that you know exactly who's making it. It
+  // is a piece of fruit yelling, which is the only reasonable response to the situation, and
+  // it goes higher and more undignified the closer the snake gets.
+  // One held note, not a string of yelps. It fades in the moment something is close enough to
+  // matter and rides your danger from there — climbing in pitch, getting louder and wobblier
+  // as the gap closes. A repeated one-shot read as honking; a sustained wail reads as the
+  // fruit screaming continuously, which is both funnier and far easier to act on.
+  //
+  // Sawtooth through two PEAKING formants (peaking boosts the vowel bands instead of throwing
+  // away everything either side of them, which is what made the first attempt inaudible),
+  // with a vibrato oscillator on the pitch to keep it from sounding like a test tone.
+  // Built like a voice rather than like a tone, because the difference between "crying" and
+  // "car horn" is entirely in the details:
+  //   · three formants in PARALLEL, summed — serial filters on a saw just colour it brassy
+  //   · the fundamental highpassed away, so you hear the formants and not the buzz
+  //   · a flat held pitch that only climbs with the danger — no warble, no vowel drift
+  //   · a shallow tremolo so it breathes
+  //   · a breath of filtered noise underneath
+  // Sample first, synth only if the sample can't be had. Pitch rides the danger either way,
+  // so the closer the snake the more the poor thing sounds like a chipmunk.
+  let screamSrc = null, screamAmp = null;
+  function startWail() {
+    if (!AC) return;
+    if (screamBuf) {
+      if (screamSrc) return;
+      const a = ac(), t = a.currentTime;
+      screamSrc = a.createBufferSource();
+      screamAmp = a.createGain();
+      screamSrc.buffer = screamBuf;
+      screamSrc.loop = true;
+      screamSrc.loopStart = SCREAM_IN;
+      screamSrc.loopEnd = SCREAM_OUT;
+      screamAmp.gain.setValueAtTime(0.0001, t);
+      screamAmp.gain.linearRampToValueAtTime(0.07, t + 0.05);
+      screamSrc.connect(screamAmp); screamAmp.connect(a.destination);
+      screamSrc.start(0, SCREAM_IN);
+      return;
+    }
+    if (!screamFailed) return;      // still downloading; don't start the understudy yet
+    startWailSynth();
+  }
+  function updateWail(k) {
+    if (screamSrc) {
+      const t = AC.currentTime;
+      screamAmp.gain.setTargetAtTime(0.07 + k * 0.17, t, 0.08);
+      screamSrc.playbackRate.setTargetAtTime(0.95 + k * 0.5, t, 0.12);
+      return;
+    }
+    updateWailSynth(k);
+  }
+  function stopWail() {
+    if (screamSrc) {
+      const a = ac(), t = a.currentTime, s = screamSrc, g = screamAmp;
+      g.gain.cancelScheduledValues(t);
+      g.gain.setTargetAtTime(0.0001, t, 0.06);
+      s.stop(t + 0.3);
+      screamSrc = null; screamAmp = null;
+    }
+    stopWailSynth();
+  }
+
+  let wail = null;
+  function startWailSynth() {
+    if (wail || !AC) return;
+    const a = ac(), t = a.currentTime;
+    const osc = a.createOscillator(), hp = a.createBiquadFilter();
+    const sum = a.createGain(), trem = a.createGain(), master = a.createGain();
+    // Chipmunk: the whole spectrum shifted up, not just the note. Fundamental up around a
+    // kilohertz and the formants dragged up with it — that ratio is what makes it read as a
+    // tiny animal shrieking rather than a person doing an impression of one.
+    osc.type = 'sawtooth'; osc.frequency.value = 900;
+    hp.type = 'highpass'; hp.frequency.value = 650;
+    osc.connect(hp);
+
+    const F = [[1450, 9, 1.0], [2450, 11, 0.8], [3900, 12, 0.35]];
+    const bands = F.map(([f, q, g]) => {
+      const bp = a.createBiquadFilter(), bg = a.createGain();
+      bp.type = 'bandpass'; bp.frequency.value = f; bp.Q.value = q; bg.gain.value = g * 6;
+      hp.connect(bp); bp.connect(bg); bg.connect(sum);
+      return bp;
+    });
+    // breath
+    const nb = a.createBuffer(1, a.sampleRate * 0.5, a.sampleRate);
+    const nd = nb.getChannelData(0);
+    for (let i = 0; i < nd.length; i++) nd[i] = Math.random() * 2 - 1;
+    const noiseSrc = a.createBufferSource(), nf = a.createBiquadFilter(), ng = a.createGain();
+    noiseSrc.buffer = nb; noiseSrc.loop = true;
+    nf.type = 'bandpass'; nf.frequency.value = 3200; nf.Q.value = 1.4; ng.gain.value = 0.035;
+    noiseSrc.connect(nf); nf.connect(ng); ng.connect(sum);
+
+    // The rasp. A clean formant tone sounds like singing; a real scream is a voice being
+    // pushed past what it can do, and that's saturation — soft-clipping the summed formants
+    // adds the harmonics that read as strained and cracking rather than sung.
+    const shaper = a.createWaveShaper();
+    const curve = new Float32Array(1024);
+    for (let i = 0; i < 1024; i++) {
+      const x = (i / 1023) * 2 - 1;
+      curve[i] = Math.tanh(x * 3.4);
+    }
+    shaper.curve = curve;
+    shaper.oversample = '2x';
+    const tame = a.createBiquadFilter();
+    tame.type = 'lowpass'; tame.frequency.value = 5200;   // keep the grit out of the ice-pick range
+
+    sum.connect(shaper); shaper.connect(tame); tame.connect(trem);
+    trem.connect(master); master.connect(a.destination);
+    trem.gain.value = 1;
+
+    const lfo = (rate, depth, target) => {
+      const o = a.createOscillator(), g = a.createGain();
+      o.type = 'sine'; o.frequency.value = rate; g.gain.value = depth;
+      o.connect(g); g.connect(target); o.start();
+      return { o, g };
+    };
+    // No pitch wobble and no vowel morph. An arcade scream is FLAT — one held "aaaah" that
+    // only moves when the situation moves. The earlier warbling version was technically more
+    // lifelike and sounded like a siren doing an impression of a mouth. All that's left is a
+    // shallow tremolo so it breathes instead of sitting there like a test tone.
+    const sob = lfo(8, 0.12, trem.gain);
+
+    master.gain.setValueAtTime(0.0001, t);
+    master.gain.linearRampToValueAtTime(0.025, t + 0.1);
+    osc.start(); noiseSrc.start();
+    wail = { osc, master, trem, sob, noiseSrc };
+  }
+  function updateWailSynth(k) {
+    if (!wail) return;
+    const t = AC.currentTime;
+    // Pitch rises with the danger and nothing else — a steady climb you can read, not a shiver.
+    wail.osc.frequency.setTargetAtTime(880 + k * 700, t, 0.12);
+    wail.master.gain.setTargetAtTime(0.022 + k * 0.075, t, 0.08);
+    wail.sob.o.frequency.setTargetAtTime(7 + k * 4, t, 0.15);
+  }
+  function stopWailSynth() {
+    if (!wail) return;
+    const a = ac(), t = a.currentTime, w = wail;
+    w.master.gain.cancelScheduledValues(t);
+    w.master.gain.setTargetAtTime(0.0001, t, 0.09);
+    const end = t + 0.4;
+    w.osc.stop(end); w.noiseSrc.stop(end); w.sob.o.stop(end);
+    wail = null;
+  }
+
+  // ---------- state ----------
+  const MENU = 0, PLAY = 1, DEAD = 2;
+  let state = MENU, booted = false;
+  let score = 0, kills = 0, elapsed = 0, chain = 0, chainT = 0, eaten = 0;
+  let best = +(localStorage.getItem('bait_best') || 0);
+  let deadAt = 0, deathBy = '';
+  let shake = 0, hitstop = 0, slowT = 0, slowCd = 0, dread = 0;
+
+  let snakes = [], fruits = [], parts = [], floaters = [], warns = [];
+  let spawnTimer = 0;
+
+  const player = {
+    x: 0, y: 0, vx: 0, vy: 0, dir: -Math.PI / 2, walk: 0,
+    dash: 0, dashCd: 0, scare: 0, alive: true,
+  };
+
+  // ---------- helpers ----------
+  const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+  const lerp = (a, b, t) => a + (b - a) * t;
+  const rand = (a, b) => a + Math.random() * (b - a);
+  const pick = (arr) => arr[(Math.random() * arr.length) | 0];
+  const ink = (a) => `rgba(24,26,33,${a})`;
+  const ACCENT = '#f97316', ACCENT_D = '#c2410c', RED = '#e5342b', GOLD = '#b45309', PINK = '#db2777';
+  function rr(x, y, w, h, r) {
+    r = Math.min(r, w / 2, h / 2);
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y, x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r);
+    ctx.arcTo(x, y, x + w, y, r);
+    ctx.closePath();
+  }
+  const circle = (x, y, r) => { ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.closePath(); };
+  const aw = () => arena.x1 - arena.x0;
+  const ah = () => arena.y1 - arena.y0;
+
+  function freeSpot(pad, awayFrom) {
+    for (let i = 0; i < 40; i++) {
+      const x = rand(arena.x0 + pad, arena.x1 - pad);
+      const y = rand(arena.y0 + pad, arena.y1 - pad);
+      if (awayFrom && Math.hypot(x - player.x, y - player.y) < awayFrom) continue;
+      return { x, y };
+    }
+    return { x: (arena.x0 + arena.x1) / 2, y: (arena.y0 + arena.y1) / 2 };
+  }
+  // A resize moves the grid under everything, so re-seat whatever was standing on it.
+  function keepInside() {
+    player.x = clamp(player.x, arena.x0 + T.playerR * S, arena.x1 - T.playerR * S);
+    player.y = clamp(player.y, arena.y0 + T.playerR * S, arena.y1 - T.playerR * S);
+    for (const f of fruits) { f.x = snapX(f.x); f.y = snapY(f.y); }
+    for (const s of snakes) {
+      s.x = snapX(s.x); s.y = snapY(s.y);
+      s.tx = nodeX(clamp(cellX(s.x) + DIRS[s.dir][0], 0, GW - 1));
+      s.ty = nodeY(clamp(cellY(s.y) + DIRS[s.dir][1], 0, GH - 1));
+    }
+  }
+
+  // ---------- fruit ----------
+  // Fruit sits on grid nodes so a snake can actually drive onto it instead of shaving past.
+  // You're not on the grid, so you just walk over it.
+  function spawnFruit(x, y) {
+    if (fruits.length >= T.fruitCap) return;
+    if (x === undefined) { const s = freeSpot(26 * S, 90 * S); x = s.x; y = s.y; }
+    fruits.push({ x: snapX(x), y: snapY(y), t: Math.random() * 6, pop: 1 });
+  }
+
+  // ---------- snakes ----------
+  // Weighted toward the newest unlock so a long run keeps introducing rather than drowning
+  // you in green forever — but weighted AGAINST whatever is already out there, because five
+  // identical snakes is one puzzle repeated, and five different ones is a board.
+  function rollType() {
+    const pool = TYPE_LIST.filter(k => elapsed >= TYPES[k].unlock);
+    if (!pool.length) return 'green';
+    const live = Object.create(null);
+    for (const s of snakes) live[s.c.name] = (live[s.c.name] || 0) + 1;
+    for (const w of warns) live[TYPES[w.type].name] = (live[TYPES[w.type].name] || 0) + 1;
+    let total = 0;
+    const weights = pool.map((k, i) => {
+      const w = (1 + i * 0.6) / (1 + (live[TYPES[k].name] || 0) * 1.7);
+      total += w;
+      return w;
+    });
+    let r = Math.random() * total;
+    for (let i = 0; i < pool.length; i++) { r -= weights[i]; if (r <= 0) return pool[i]; }
+    return pool[pool.length - 1];
+  }
+  // Telegraph the entry point on the wall for a beat before anything comes through it. Being
+  // eaten by something that materialised behind you isn't difficulty, it's noise. Entries are
+  // grid-aligned, so a snake arrives already walking a lane.
+  function spawnWarn(type) {
+    const side = (Math.random() * 4) | 0;
+    const i = 1 + ((Math.random() * (GW - 2)) | 0);
+    const j = 1 + ((Math.random() * (GH - 2)) | 0);
+    let x, y, dir, ti, tj;
+    if (side === 0)      { x = nodeX(i); y = arena.y0; dir = 1; ti = i; tj = 0; }
+    else if (side === 1) { x = arena.x1; y = nodeY(j); dir = 2; ti = GW - 1; tj = j; }
+    else if (side === 2) { x = nodeX(i); y = arena.y1; dir = 3; ti = i; tj = GH - 1; }
+    else                 { x = arena.x0; y = nodeY(j); dir = 0; ti = 0; tj = j; }
+    warns.push({ x, y, dir, ti, tj, t: 0, dur: 0.9, type: type || rollType() });
+    sndSpawn();
+  }
+  function spawnSnake(w) {
+    const c = TYPES[w.type];
+    // It starts as a head on the edge node with no body at all and grows one as it drives in,
+    // which reads as slithering through the seam. Laying a full-length tail back through the
+    // wall would be worse than ugly: on a wrapping arena those points are genuinely on the
+    // FAR side of the board, so an invisible tail could kill you clean across the screen.
+    const x = nodeX(w.ti), y = nodeY(w.tj);
+    snakes.push({
+      c, x, y, dir: w.dir, pts: [{ x, y }], acc: 0, r: c.r * S,
+      tx: nodeX(w.ti + DIRS[w.dir][0]), ty: nodeY(w.tj + DIRS[w.dir][1]),
+      len: c.len, straight: 9, entering: true, dead: false, born: 0,
+      hiss: 0, lunge: 0, lungeCd: rand(1.5, 3.5), side: Math.random() < 0.5 ? 1 : -1, sideT: 0,
+    });
+  }
+
+  function speedMult() { return 1 + Math.min(T.speedMax, elapsed / T.speedRamp); }
+
+  // What a snake steers at. Fruit wins only when it's genuinely closer — otherwise the hunt
+  // is the priority. A fresh corpse full of fruit flips every nearby snake into a feeding
+  // frenzy, which is where the chain reactions come from.
+  // Everything is returned as a point NEAR THE SNAKE — the nearest wrapped image of whatever
+  // it wants — so the node-scoring maths downstream can stay plain flat geometry.
+  function aimPoint(s) {
+    const bait = baitPos();
+    const bx = s.x + wdx(bait.x, s.x), by = s.y + wdy(bait.y, s.y);
+    const pd = Math.hypot(bx - s.x, by - s.y) || 1;
+
+    // They can smell fruit most of the way across the board — but you are always the point.
+    // A snake only breaks off for food that's well inside the distance it would have to
+    // travel to reach you, so a detour is a shortcut, never a change of mind.
+    let food = null, fd = Infinity;
+    const reach = 360 * S * s.c.hunger;
+    for (const f of fruits) {
+      const d = wdist(f.x, f.y, s.x, s.y);
+      if (d < fd && d < reach && d < pd * 0.85) { fd = d; food = f; }
+    }
+    if (food) return { x: s.x + wdx(food.x, s.x), y: s.y + wdy(food.y, s.y) };
+    if (pd < 200 * S) return { x: bx, y: by };            // inside striking range: straight at you
+
+    const tHit = clamp(pd / (s.c.speed * S * speedMult()), 0, 1.1);
+    let tx = bx + baitVel.x * tHit * s.c.lead;
+    let ty = by + baitVel.y * tHit * s.c.lead;
+    if (s.c.flank) {
+      // PURPLE doesn't chase, it cuts off — aiming beside you so it arrives across your
+      // escape line instead of behind your back.
+      const bs = Math.hypot(baitVel.x, baitVel.y) || 1;
+      tx += (-baitVel.y / bs) * 95 * S * s.side;
+      ty += (baitVel.x / bs) * 95 * S * s.side;
+    }
+    return { x: tx, y: ty };
+  }
+
+  // The body is the head's path, sampled every T.spacing px — which is why a snake's body
+  // always lies exactly where its head has already been, corners and all.
+  function trail(s, px, py, dist) {
+    if (dist <= 0) return;
+    s.acc += dist;
+    let guard = 0;
+    while (s.acc >= T.spacing && guard++ < 40) {
+      const back = clamp((s.acc - T.spacing) / dist, 0, 1);
+      s.acc -= T.spacing;
+      s.pts.unshift({ x: lerp(s.x, px, back), y: lerp(s.y, py, back) });
+    }
+    if (s.pts.length > s.len) s.pts.length = s.len;
+  }
+
+  // How bad it would be to leave this node heading `dir` — 1 if the very next cell already
+  // holds a body, tapering to 0 if nothing lethal shows up within its lookahead. This is the
+  // only "intelligence" a snake has, and each type is allowed a different amount of it.
+  function cellDanger(i, j, dir, look) {
+    for (let k = 1; k <= look; k++) {
+      if (occ.has(ckey(i + DIRS[dir][0] * k, j + DIRS[dir][1] * k))) return (look - k + 1) / look;
+    }
+    return 0;
+  }
+
+  // How much room is left down there — a flood fill from the next cell, capped so it stays
+  // cheap. This is the difference between a snake that coils itself into a box and one that
+  // keeps an exit. GREEN and RED are given none of it, which is why they die of their own
+  // enthusiasm; BLUE hardly ever does.
+  const flood = [];
+  function openness(i, j, dir, cap) {
+    const start = ckey(i + DIRS[dir][0], j + DIRS[dir][1]);
+    if (occ.has(start)) return 0;
+    const seen = new Set([start]);
+    flood.length = 0;
+    flood.push([wrapI(i + DIRS[dir][0]), wrapJ(j + DIRS[dir][1])]);
+    let n = 0;
+    for (let h = 0; h < flood.length && n < cap; h++) {
+      const [ci, cj] = flood[h];
+      n++;
+      for (const [dx, dy] of DIRS) {
+        const k = ckey(ci + dx, cj + dy);
+        if (seen.has(k) || occ.has(k)) continue;
+        seen.add(k);
+        flood.push([wrapI(ci + dx), wrapJ(cj + dy)]);
+      }
+    }
+    return n / cap;
+  }
+
+  // Standing on a node, it picks one of three ways out: carry straight on, or corner left or
+  // right. Never back — a snake that reverses eats itself, and they know that much.
+  function chooseDir(s) {
+    const i = cellX(s.x), j = cellY(s.y);
+    const tgt = aimPoint(s);
+    const locked = s.lunge > 0;                 // mid-lunge it cannot corner at all
+    let bestDir = s.dir, bestScore = -Infinity;
+    for (const o of [s.dir, (s.dir + 1) % 4, (s.dir + 3) % 4]) {
+      const turning = o !== s.dir;
+      if (turning && (locked || s.straight < s.c.minStraight)) continue;
+      const nx = nodeX(i + DIRS[o][0]), ny = nodeY(j + DIRS[o][1]);
+      let sc = -Math.hypot(nx - tgt.x, ny - tgt.y) / CELL;
+      if (!turning) sc += s.c.straight;
+      sc -= cellDanger(i, j, o, s.c.look) * 40 * s.c.care;
+      if (s.c.space) sc += openness(i, j, o, 26) * 6 * s.c.space;
+      if (sc > bestScore) { bestScore = sc; bestDir = o; }
+    }
+    s.straight = bestDir === s.dir ? s.straight + 1 : 0;
+    s.dir = bestDir;
+    s.tx = nodeX(i + DIRS[bestDir][0]);
+    s.ty = nodeY(j + DIRS[bestDir][1]);
+  }
+
+  function updateSnake(s, dt) {
+    // RED coils, hisses, then lunges — and can't corner at all while it does, so the
+    // scariest attack in the game is also the easiest one to make it regret.
+    let spdMul = 1;
+    if (s.c.lunge) {
+      s.lungeCd -= dt;
+      const b = baitPos();
+      const pd = wdist(b.x, b.y, s.x, s.y);
+      if (s.lunge <= 0 && s.hiss <= 0 && s.lungeCd <= 0 && pd < 380 * S) { s.hiss = 0.35; s.lungeCd = rand(3.2, 4.6); sndHiss(); }
+      if (s.hiss > 0) { s.hiss -= dt; spdMul = 0.5; if (s.hiss <= 0) s.lunge = 0.7; }
+      else if (s.lunge > 0) { s.lunge -= dt; spdMul = 1.9; }
+    }
+    if (s.sideT <= 0) { s.sideT = rand(2.5, 5); s.side *= -1; } else s.sideT -= dt;
+    s.born += dt;
+    // Fruit makes them longer AND thicker — a fed snake is visibly a bigger problem, and it
+    // fills its lane, which is what eventually leaves it nowhere to turn.
+    s.r = Math.min(s.c.r * 1.4, s.c.r + Math.max(0, s.pts.length - s.c.len) * 0.035) * S;
+
+    // Walk toward the node it committed to. Any distance left over after arriving is carried
+    // into the new heading, so a fast snake and a slow one both move exactly their speed and
+    // neither one stutters at corners.
+    let move = s.c.speed * S * speedMult() * spdMul * dt;
+    let guard = 0;
+    while (move > 0 && guard++ < 64) {
+      const px = s.x, py = s.y;
+      const dx = s.tx - s.x, dy = s.ty - s.y;
+      const remain = Math.abs(dx) + Math.abs(dy);
+      if (remain > move) {
+        s.x += Math.sign(dx) * Math.min(move, Math.abs(dx));
+        s.y += Math.sign(dy) * Math.min(move, Math.abs(dy));
+        trail(s, px, py, move);
+        move = 0;
+      } else {
+        s.x = s.tx; s.y = s.ty;
+        trail(s, px, py, remain);
+        move -= remain;
+        if (s.entering) s.entering = false;     // it has reached its first node inside
+        // Step off the board and you step back on from the far side. The body follows the
+        // same path, so it streams through the seam behind the head.
+        s.x = snapX(s.x); s.y = snapY(s.y);
+        chooseDir(s);
+      }
+    }
+
+    const r = s.r;
+    if (s.entering) return;
+
+    // --- the two ways a snake dies: a body, anybody's, including its own ---
+    const selfHit = r * 0.82;
+    for (let i = T.neckSkip; i < s.pts.length; i++) {
+      const p = s.pts[i];
+      if (wdist2(s.x, s.y, p.x, p.y) < selfHit * selfHit) { killSnake(s, 'ITSELF'); return; }
+    }
+    for (const o of snakes) {
+      if (o === s || o.dead || o.entering) continue;
+      const hit = (r + o.r) * 0.78;
+      if (wdist2(s.x, s.y, o.x, o.y) < hit * hit) { killSnake(s, 'HEAD-ON'); killSnake(o, 'HEAD-ON'); return; }
+      for (let i = 0; i < o.pts.length; i += 2) {
+        const p = o.pts[i];
+        if (wdist2(s.x, s.y, p.x, p.y) < hit * hit) { killSnake(s, o.c.name); return; }
+      }
+    }
+
+    // --- feeding ---
+    for (let i = fruits.length - 1; i >= 0; i--) {
+      const f = fruits[i];
+      if (wdist(s.x, s.y, f.x, f.y) < r + T.fruitR * S) {
+        fruits.splice(i, 1);
+        s.len = Math.min(T.maxLen, s.len + T.growPerFruit);
+        burst(f.x, f.y, PINK, 6, 90);
+      }
+    }
+  }
+
+  function killSnake(s, cause) {
+    if (s.dead) return;
+    s.dead = true;
+    // The world keeps moving on the game-over screen — snakes carry on piling into each other
+    // behind the panel — but the run is over, so none of it counts. Without this guard the
+    // final score creeps upward while you're reading it, and disagrees with the number
+    // already sent to analytics.
+    const counts = state === PLAY;
+    let gain = 0;
+    if (counts) {
+      kills++;
+      // Chains cap out. Late on, five snakes can fall over each other in a second and an
+      // uncapped multiplier turns one lucky pile-up into a score nothing else can touch.
+      chain = chainT > 0 ? Math.min(T.chainCap, chain + 1) : 1;
+      chainT = T.chainWindow;
+      gain = Math.round(s.c.score * chain);
+      score += gain;
+      if (score > best) { best = score; localStorage.setItem('bait_best', String(best)); }
+    }
+
+    // Dead snakes explode into fruit — the reward AND the next problem, because every snake
+    // still alive is now sprinting at the pile you're standing in.
+    const drops = clamp(Math.round(s.pts.length / 9), 2, 9);
+    for (let i = 0; i < drops; i++) {
+      const p = s.pts[Math.min(s.pts.length - 1, Math.round(i * s.pts.length / drops))] || s;
+      spawnFruit(p.x, p.y);      // the corpse falls where the body lay
+    }
+    for (let i = 0; i < s.pts.length; i += 3) burst(s.pts[i].x, s.pts[i].y, s.c.color, 2, 110);
+    burst(s.x, s.y, s.c.color, 18, 230);
+    floaters.push({ x: s.x, y: s.y - 16 * S, vy: -34, life: 1.3, text: '+' + gain, color: s.c.dark, size: 20 });
+    if (chain > 1) floaters.push({ x: s.x, y: s.y - 40 * S, vy: -26, life: 1.4, text: 'CHAIN x' + chain, color: GOLD, size: 15 });
+    floaters.push({ x: s.x, y: s.y + 14 * S, vy: -18, life: 1.1, text: cause, color: ink(0.4), size: 11 });
+
+    shake = Math.min(1.2, shake + 0.5);
+    hitstop = 0.07; slowT = Math.max(slowT, 0.32);
+    sndKill(chain);
+  }
+
+  // ---------- particles ----------
+  function burst(x, y, color, n, spd) {
+    if (parts.length > 800) return;
+    for (let i = 0; i < n; i++) {
+      const a = rand(0, Math.PI * 2), v = rand(0.25, 1) * spd * S;
+      parts.push({ x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, r: rand(1.4, 3.4) * S, life: 1, decay: rand(1.1, 2.4), color });
+    }
+  }
+
+  // ---------- the bait ----------
+  // On the title screen the snakes chase a ghost that drifts around the arena and the little
+  // apple rides along with it, so the menu is a live hunt instead of a still. Same code path,
+  // different target.
+  let baitVel = { x: 0, y: 0 }, baitPrev = { x: 0, y: 0 };
+  let attractT = 0;
+  function baitPos() {
+    if (state === PLAY) return player;
+    const cx = (arena.x0 + arena.x1) / 2, cy = (arena.y0 + arena.y1) / 2;
+    return {
+      x: cx + Math.cos(attractT * 0.55) * aw() * 0.31,
+      y: cy + Math.sin(attractT * 0.83) * ah() * 0.29,
+    };
+  }
+
+  // ---------- run flow ----------
+  function resetCommon() {
+    snakes = []; fruits = []; parts = []; floaters = []; warns = [];
+    chain = 0; chainT = 0; kills = 0; score = 0; eaten = 0; elapsed = 0;
+    spawnTimer = 0; shake = 0; hitstop = 0; slowT = 0; slowCd = 0; dread = 0;
+    stopWail();
+    baitVel = { x: 0, y: 0 };
+    baitPrev = { x: (arena.x0 + arena.x1) / 2, y: (arena.y0 + arena.y1) / 2 };
+  }
+  function resetAttract() {
+    resetCommon();
+    state = MENU; attractT = 0;
+    const b = baitPos();
+    player.x = b.x; player.y = b.y; player.vx = player.vy = 0; player.alive = true; player.scare = 0;
+    for (let i = 0; i < fruitQuota(); i++) spawnFruit();
+    spawnWarn('green'); spawnWarn('yellow');
+  }
+  function startRun() {
+    resetCommon();
+    state = PLAY;
+    player.x = (arena.x0 + arena.x1) / 2; player.y = (arena.y0 + arena.y1) / 2;
+    player.vx = player.vy = 0; player.dash = 0; player.dashCd = 0; player.alive = true; player.scare = 0;
+    for (let i = 0; i < fruitQuota(); i++) spawnFruit();
+    // Open on two of them, not one — this was never a duel — but give the opening telegraph
+    // a longer beat than usual so the first thing you learn isn't that you're already dead.
+    for (let i = 0; i < 2; i++) spawnWarn('green');
+    for (const w of warns) w.dur = 1.5;
+    spawnTimer = T.spawnBase;
+    if (window.trackGame) trackGame('game_start', 'bait');
+  }
+  function die(cause) {
+    if (!player.alive) return;
+    player.alive = false;
+    state = DEAD; deadAt = performance.now(); deathBy = cause;
+    burst(player.x, player.y, ACCENT, 26, 250);
+    burst(player.x, player.y, PINK, 14, 170);
+    shake = 1.3; hitstop = 0.11;
+    stopWail();                      // it stops screaming; it has been eaten
+    sndDie();
+    if (window.trackGame) {
+      trackGame('game_end', 'bait', {
+        score,
+        // The run's own clock, not wall time. This game dilates time (hitstop and slow motion)
+        // and stops entirely if the tab is backgrounded, so wall time would report a run
+        // longer than the player played and longer than the number on the death screen.
+        duration_sec: Math.round(elapsed),
+      });
+    }
+  }
+
+  // ---------- input ----------
+  const keys = Object.create(null);
+  let joy = null;                                   // floating stick, born wherever you touch
+  function localPt(e) {
+    const r = cvs.getBoundingClientRect();
+    return { x: e.clientX - r.left, y: e.clientY - r.top };
+  }
+  function tryDash() {
+    if (state !== PLAY || !player.alive) return;
+    if (player.dashCd > 0 || player.dash > 0) return;
+    const m = Math.hypot(player.vx, player.vy);
+    const dx = m > 12 ? player.vx / m : Math.cos(player.dir);
+    const dy = m > 12 ? player.vy / m : Math.sin(player.dir);
+    player.vx = dx * T.dashSpeed * S; player.vy = dy * T.dashSpeed * S;
+    player.dash = T.dashTime; player.dashCd = T.dashCd;
+    sndDash();
+  }
+  function primary() {
+    ac();
+    if (state === MENU) { startRun(); return true; }
+    if (state === DEAD) { if (performance.now() - deadAt > 700) resetAttract(); return true; }
+    return false;
+  }
+  window.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    const started = primary();
+    if (state !== PLAY) return;
+    if (IS_TOUCH) {
+      // No dash button. If a thumb is already steering, a tap from ANY other finger is the
+      // dash — nothing on screen to reach for, nothing covering the board, and it can't
+      // misfire while you re-grip the stick the way a double-tap would.
+      if (joy && e.pointerId !== joy.id) { if (!started) tryDash(); return; }
+      const p = localPt(e);
+      joy = { id: e.pointerId, ox: p.x, oy: p.y, x: p.x, y: p.y };
+      return;
+    }
+    if (!started) tryDash();                        // on desktop a click dashes too
+  }, { passive: false });
+  window.addEventListener('pointermove', (e) => {
+    if (!joy || e.pointerId !== joy.id) return;
+    const p = localPt(e); joy.x = p.x; joy.y = p.y;
+  }, { passive: false });
+  function endPointer(e) {
+    if (joy && e.pointerId === joy.id) joy = null;
+  }
+  window.addEventListener('pointerup', (e) => { e.preventDefault(); endPointer(e); }, { passive: false });
+  window.addEventListener('pointercancel', endPointer);
+  window.addEventListener('keydown', (e) => {
+    const c = e.code;
+    if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Space','ShiftLeft','ShiftRight'].includes(c)) e.preventDefault();
+    keys[c] = true;
+    if (c === 'Space' || c === 'Enter') { if (!e.repeat && !primary() && state === PLAY) tryDash(); return; }
+    if ((c === 'ShiftLeft' || c === 'ShiftRight') && !e.repeat) { ac(); tryDash(); }
+  });
+  window.addEventListener('keyup', (e) => { keys[e.code] = false; });
+  window.addEventListener('blur', () => { for (const k in keys) keys[k] = false; joy = null; });
+  window.addEventListener('contextmenu', (e) => e.preventDefault());
+  const band = document.getElementById('band');
+  band.addEventListener('pointerdown', (e) => e.stopPropagation());
+  band.addEventListener('pointerup', (e) => e.stopPropagation());
+
+  function inputDir() {
+    let dx = 0, dy = 0;
+    if (keys.KeyW || keys.ArrowUp) dy -= 1;
+    if (keys.KeyS || keys.ArrowDown) dy += 1;
+    if (keys.KeyA || keys.ArrowLeft) dx -= 1;
+    if (keys.KeyD || keys.ArrowRight) dx += 1;
+    if (joy) {
+      const jx = joy.x - joy.ox, jy = joy.y - joy.oy, m = Math.hypot(jx, jy);
+      if (m > 6) { const k = Math.min(1, (m - 6) / (42 * Math.max(0.9, S))); dx += (jx / m) * k; dy += (jy / m) * k; }
+    }
+    const m = Math.hypot(dx, dy);
+    if (m > 1) { dx /= m; dy /= m; }
+    return { x: dx, y: dy, m: Math.min(1, m) };
+  }
+
+  // ---------- update ----------
+  function updatePlayer(dt) {
+    const inp = inputDir();
+    if (player.dash > 0) {
+      player.dash -= dt;
+      parts.push({ x: player.x, y: player.y, vx: 0, vy: 0, r: T.playerR * S * 0.85, life: 1, decay: 3.6, color: '#fed7aa' });
+    } else {
+      const want = T.playerSpeed * S * inp.m;
+      const dvx = inp.x * want - player.vx, dvy = inp.y * want - player.vy;
+      const dm = Math.hypot(dvx, dvy);
+      if (dm > 0) { const k = Math.min(1, T.playerAccel * S * dt / dm); player.vx += dvx * k; player.vy += dvy * k; }
+    }
+    if (player.dashCd > 0) player.dashCd -= dt;
+
+    player.x += player.vx * dt; player.y += player.vy * dt;
+    const spd = Math.hypot(player.vx, player.vy);
+    // One phase drives the whole run cycle, advanced by how fast you're actually going, so
+    // the hop speeds up with you instead of running on its own clock.
+    if (spd > 8) { player.dir = Math.atan2(player.vy, player.vx); player.walk += (spd / (T.playerSpeed * S)) * dt * 13; }
+    else player.walk += dt * 1.6;
+
+    // No walls to hide behind — run off an edge and you come back on the other one, same as
+    // they do. There is no corner in this arena, which means there's no cheap escape either.
+    const r = T.playerR * S;
+    wrapPos(player);
+
+    for (let i = fruits.length - 1; i >= 0; i--) {
+      const f = fruits[i];
+      if (wdist(player.x, player.y, f.x, f.y) < r + T.fruitR * S + 2) {
+        fruits.splice(i, 1); eaten++;
+        score += T.fruitScore;
+        if (score > best) { best = score; localStorage.setItem('bait_best', String(best)); }
+        floaters.push({ x: f.x, y: f.y - 8, vy: -30, life: 0.8, text: '+' + T.fruitScore, color: PINK, size: 13 });
+        burst(f.x, f.y, PINK, 7, 110);
+        sndEat(eaten);
+      }
+    }
+
+    // --- being eaten ---
+    let nearest = Infinity;
+    for (const s of snakes) {
+      if (s.dead) continue;
+      const dh = wdist(player.x, player.y, s.x, s.y);
+      nearest = Math.min(nearest, dh - s.r);
+      if (s.entering) continue;
+      if (dh < r + s.r * 0.92) { die(s.c.name); return; }
+      const hitB = r + s.r * 0.78;
+      for (let i = 0; i < s.pts.length; i++) {
+        const p = s.pts[i];
+        if (wdist2(player.x, player.y, p.x, p.y) < hitB * hitB) { die(s.c.name); return; }
+      }
+    }
+    // A beat of bullet-time when a head comes within a hair of you — on a cooldown, so a
+    // swarm doesn't turn the whole run to syrup.
+    player.scare = clamp(1 - nearest / (110 * S), 0, 1);
+    if (nearest < 26 * S && slowCd <= 0) {
+      slowT = Math.max(slowT, 0.3); slowCd = 1.5; sndNear();
+      floaters.push({ x: player.x, y: player.y - 26 * S, vy: -26, life: 0.9, text: 'CLOSE', color: ink(0.45), size: 11 });
+    }
+  }
+
+  function update(dt) {
+    // Once you're eaten the board stops dead: no snakes moving behind the panel, no spawns,
+    // no drifting fruit. What's on screen is the arrangement that killed you, held still so
+    // you can look at it.
+    const over = state === DEAD;
+    if (state === MENU) attractT += dt;
+    else if (state === PLAY) elapsed += dt;
+
+    shake = Math.max(0, shake - dt * 2.6);
+    slowCd = Math.max(0, slowCd - dt);
+    if (chainT > 0 && !over) { chainT -= dt; if (chainT <= 0) chain = 0; }
+
+    // The wail holds for as long as something is near you. Silence means you have room.
+    if (state === PLAY && player.alive && player.scare > 0.12) { startWail(); updateWail(player.scare); }
+    else stopWail();
+    // ...and the board itself flushes red, slowly, so panic arrives in peripheral vision
+    // before you've consciously found the snake that's causing it. On death it freezes at
+    // whatever level it had reached, which is its own kind of epitaph.
+    if (!over) {
+      const dTarget = state === PLAY && player.alive ? player.scare : 0;
+      dread += (dTarget - dread) * Math.min(1, dt * (dTarget > dread ? 1.8 : 0.9));
+    }
+
+    // Whatever the snakes are chasing — you, or the ghost drifting around the title screen —
+    // its velocity is just where it was last frame versus now. SILVER and PURPLE key off it.
+    if (!over) {
+      const prev = baitPrev;
+      if (state === PLAY && player.alive) updatePlayer(dt);
+      const b = baitPos();
+      if (state === MENU) { player.x = b.x; player.y = b.y; }
+      if (dt > 0) baitVel = { x: (b.x - prev.x) / dt, y: (b.y - prev.y) / dt };
+      baitPrev = { x: b.x, y: b.y };
+
+      // --- the ramp: more of them, sooner, faster ---
+      if (state === PLAY) {
+        const liveCap = Math.min(T.liveCap, boardCap(), T.liveBase + Math.floor(elapsed / T.livePer));
+        const interval = Math.max(T.spawnMin, T.spawnBase - elapsed / T.spawnRamp * T.spawnBase);
+        const pending = snakes.length + warns.length;
+        // Refill toward the cap rather than on a fixed drip: the further below quota the
+        // board is, the sooner the next one comes through the wall.
+        if (pending === 0) spawnTimer = Math.min(spawnTimer, 0.6);
+        else if (pending < liveCap - 1) spawnTimer = Math.min(spawnTimer, interval * 0.5);
+        spawnTimer -= dt;
+        if (spawnTimer <= 0 && pending < liveCap) { spawnWarn(); spawnTimer = interval; }
+      } else if (snakes.length + warns.length < 2) {
+        spawnWarn();                       // the title screen keeps two of them hunting
+      }
+      while (fruits.length < fruitQuota()) spawnFruit();
+
+      for (let i = warns.length - 1; i >= 0; i--) {
+        const w = warns[i];
+        w.t += dt;
+        if (w.t >= w.dur) { spawnSnake(w); warns.splice(i, 1); }
+      }
+      buildOcc();
+      for (const s of snakes) if (!s.dead) updateSnake(s, dt);
+      snakes = snakes.filter(s => !s.dead);
+
+      for (const f of fruits) { f.t += dt; f.pop = Math.max(0, f.pop - dt * 2.4); }
+    }
+
+    // Debris and score pops carry on either way — the death burst still needs to play out.
+    for (const p of parts) {
+      p.x += p.vx * dt; p.y += p.vy * dt;
+      const damp = Math.max(0, 1 - 2.2 * dt);
+      p.vx *= damp; p.vy *= damp;
+      p.life -= dt * p.decay;
+    }
+    parts = parts.filter(p => p.life > 0);
+    for (const f of floaters) { f.y += f.vy * dt; f.vy *= Math.max(0, 1 - 1.6 * dt); f.life -= dt * 0.85; }
+    floaters = floaters.filter(f => f.life > 0);
+  }
+
+  // ---------- draw ----------
+  // Anything sitting on a seam has to be drawn on both sides of it, or half of it vanishes
+  // for the moment it's crossing.
+  function edgeOffsets(x, y, r) {
+    const out = [[0, 0]], w = aw(), h = ah();
+    const l = x - arena.x0 < r, ri = arena.x1 - x < r, t = y - arena.y0 < r, b = arena.y1 - y < r;
+    if (l) out.push([w, 0]);
+    if (ri) out.push([-w, 0]);
+    if (t) out.push([0, h]);
+    if (b) out.push([0, -h]);
+    if (l && t) out.push([w, h]);
+    if (l && b) out.push([w, -h]);
+    if (ri && t) out.push([-w, h]);
+    if (ri && b) out.push([-w, -h]);
+    return out;
+  }
+
+  // Nothing to draw a border with: the board runs corner to corner and every edge is a seam,
+  // not a wall. The only thing painted here is the dread — a red tide that creeps in from
+  // outside as something closes on you, and drains away slower than it arrived.
+  function drawArena() {
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, W, H);
+    if (dread > 0.01) {
+      ctx.fillStyle = `rgba(229,52,43,${0.06 * dread})`;
+      ctx.fillRect(0, 0, W, H);
+      const g = ctx.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.18, W / 2, H / 2, Math.max(W, H) * 0.72);
+      g.addColorStop(0, 'rgba(229,52,43,0)');
+      g.addColorStop(1, `rgba(229,52,43,${0.34 * dread})`);
+      ctx.fillStyle = g;
+      ctx.fillRect(0, 0, W, H);
+    }
+  }
+
+  function face(r, mouth) {
+    const ex = r * 0.32, ey = -r * 0.08, es = r * 0.26;
+    ctx.fillStyle = '#fff';
+    circle(-ex, ey, es); ctx.fill(); circle(ex, ey, es); ctx.fill();
+    ctx.strokeStyle = '#181a21'; ctx.lineWidth = Math.max(1, r * 0.09);
+    circle(-ex, ey, es); ctx.stroke(); circle(ex, ey, es); ctx.stroke();
+    ctx.fillStyle = '#181a21';
+    circle(-ex + es * 0.18, ey + es * 0.1, es * 0.46); ctx.fill();
+    circle(ex + es * 0.18, ey + es * 0.1, es * 0.46); ctx.fill();
+    ctx.beginPath();
+    if (mouth === 'o') ctx.arc(0, r * 0.5, r * 0.19, 0, Math.PI * 2);
+    else ctx.arc(0, r * 0.34, r * 0.28, 0.12 * Math.PI, 0.88 * Math.PI);
+    ctx.stroke();
+  }
+  const leaf = (x, y, r, rot) => {
+    ctx.fillStyle = '#16a34a';
+    ctx.save(); ctx.translate(x, y); ctx.rotate(rot);
+    ctx.beginPath(); ctx.ellipse(0, 0, r * 0.5, r * 0.22, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+  };
+  // Deliberately not a character. Everything with a face on this board is either you or
+  // trying to eat you — fruit is just fruit, and it needs to read as loot at a glance.
+  function drawFruit(f) {
+    const r = T.fruitR * S * (1 + Math.sin(f.t * 3) * 0.05 + f.pop * 0.45);
+    ctx.fillStyle = 'rgba(24,26,33,0.08)';
+    ctx.beginPath(); ctx.ellipse(f.x, f.y + r * 1.05, r * 0.8, r * 0.26, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = PINK; circle(f.x, f.y, r); ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,0.65)';
+    circle(f.x - r * 0.3, f.y - r * 0.33, r * 0.26); ctx.fill();
+    ctx.strokeStyle = '#16a34a'; ctx.lineWidth = 2; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(f.x, f.y - r * 0.9); ctx.lineTo(f.x + r * 0.45, f.y - r * 1.6); ctx.stroke();
+  }
+
+  // The body is one polyline of even thickness with a rounded-off tail — a snake, not a comet.
+  // The only break in it is at a seam: when two consecutive points are a screen apart, the
+  // path lifts instead of drawing a stripe back across the arena.
+  function bodyPath(s) {
+    ctx.beginPath();
+    let px = s.x, py = s.y;
+    ctx.moveTo(px, py);
+    for (let i = 0; i < s.pts.length; i++) {
+      const p = s.pts[i];
+      if (Math.abs(p.x - px) > CX * 1.5 || Math.abs(p.y - py) > CY * 1.5) ctx.moveTo(p.x, p.y);
+      else ctx.lineTo(p.x, p.y);
+      px = p.x; py = p.y;
+    }
+  }
+  function drawHead(s, x, y) {
+    const r = s.r, hw = r * 1.32, hh = r * 1.1, coiled = s.hiss > 0;
+    ctx.save();
+    ctx.translate(x, y); ctx.rotate(s.dir * Math.PI / 2);
+    ctx.fillStyle = s.c.dark;
+    rr(-hw - 1.5, -hh - 1.5, hw * 2 + 3, hh * 2 + 3, hh * 0.8); ctx.fill();
+    ctx.fillStyle = s.c.color;
+    rr(-hw, -hh, hw * 2, hh * 2, hh * 0.75); ctx.fill();
+    ctx.fillStyle = '#fff';
+    circle(hw * 0.3, -hh * 0.48, hh * 0.34); ctx.fill();
+    circle(hw * 0.3, hh * 0.48, hh * 0.34); ctx.fill();
+    ctx.fillStyle = '#181a21';
+    circle(hw * 0.46, -hh * 0.48, hh * 0.17); ctx.fill();
+    circle(hw * 0.46, hh * 0.48, hh * 0.17); ctx.fill();
+    // tongue — flicks on a timer, and stays out while RED is coiled to strike
+    if (coiled || Math.sin(s.born * 6 + s.pts.length) > 0.86) {
+      const L = r * (coiled ? 2.2 : 1.5);
+      ctx.strokeStyle = '#e5342b'; ctx.lineWidth = 1.8; ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(hw, 0); ctx.lineTo(hw + L * 0.6, 0);
+      ctx.moveTo(hw + L * 0.6, 0); ctx.lineTo(hw + L, -L * 0.3);
+      ctx.moveTo(hw + L * 0.6, 0); ctx.lineTo(hw + L, L * 0.3);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+  function drawSnake(s) {
+    if (s.pts.length < 2) return;
+    const r = s.r;
+    ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    bodyPath(s);
+    ctx.lineWidth = r * 2 + 3; ctx.strokeStyle = s.c.dark; ctx.stroke();
+    ctx.lineWidth = r * 2; ctx.strokeStyle = s.c.color; ctx.stroke();
+    ctx.lineWidth = Math.max(1.5, r * 0.4); ctx.strokeStyle = 'rgba(255,255,255,0.3)'; ctx.stroke();
+    for (const [ox, oy] of edgeOffsets(s.x, s.y, r * 3)) drawHead(s, s.x + ox, s.y + oy);
+  }
+
+  function drawWarn(w) {
+    const a = w.dir * Math.PI / 2, k = w.t / w.dur;
+    ctx.save();
+    ctx.globalAlpha = (((w.t * 9) | 0) % 2 === 0 ? 0.95 : 0.35) * (1 - k * 0.25);
+    ctx.fillStyle = TYPES[w.type].color;
+    ctx.beginPath();
+    const tip = 24 * S;
+    ctx.moveTo(w.x + Math.cos(a) * tip, w.y + Math.sin(a) * tip);
+    ctx.lineTo(w.x + Math.cos(a + 2.5) * 11 * S, w.y + Math.sin(a + 2.5) * 11 * S);
+    ctx.lineTo(w.x + Math.cos(a - 2.5) * 11 * S, w.y + Math.sin(a - 2.5) * 11 * S);
+    ctx.closePath(); ctx.fill();
+    ctx.restore();
+  }
+
+  // You: a small round fruit with legs and a face. Literally the food. The face is the only
+  // HUD that matters — it panics when something is about to reach you.
+  // Spider sense: rings breathing outward, faster and redder the closer something is. No
+  // arrows, no readout — just the feeling that you are being approached.
+  function drawSense(px, py, r) {
+    const k = player.scare;
+    if (k < 0.05) return;
+    const t = performance.now() / 1000;
+    for (let i = 0; i < 3; i++) {
+      const ph = (t * (0.7 + k * 2.4) + i / 3) % 1;
+      ctx.globalAlpha = (1 - ph) * k * 0.55;
+      ctx.strokeStyle = k > 0.55 ? RED : ACCENT;
+      ctx.lineWidth = 2.5;
+      circle(px, py, r * (1.6 + ph * 2.5)); ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  function drawPlayer() {
+    if (!player.alive) return;
+    const r = T.playerR * S;
+    for (const [ox, oy] of edgeOffsets(player.x, player.y, r * 5)) drawSense(player.x + ox, player.y + oy, r);
+    for (const [ox, oy] of edgeOffsets(player.x, player.y, r * 3)) drawApple(player.x + ox, player.y + oy, r);
+  }
+  // The hero: an orange, running for its life. No legs — it hops, and everything else is
+  // squash and stretch: flattened on the ground, stretched at the top of each bounce, leaning
+  // into the direction it's fleeing, smeared long while dashing. The shadow stays on the floor
+  // and shrinks as it leaves it, which is what sells the hop as height rather than wobble.
+  function drawApple(px, py, r) {
+    const scare = player.scare;
+    const spd = Math.hypot(player.vx, player.vy);
+    const run = clamp(spd / (T.playerSpeed * S), 0, 1.2);
+    const air = Math.abs(Math.sin(player.walk));       // 0 on the floor, 1 at the peak
+    const lift = air * r * 0.36 * run;
+
+    ctx.fillStyle = `rgba(24,26,33,${0.12 - air * 0.055 * run})`;
+    ctx.beginPath();
+    ctx.ellipse(px, py + r * 1.12, r * (0.86 - air * 0.22 * run), r * (0.29 - air * 0.09 * run), 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Dash charge rides above the head as a little arc, curved to the shape of the fruit it
+    // sits on, and it swings side to side with the run — once per stride rather than once per
+    // hop, so it reads as something being carried rather than something bolted on.
+    if (state === PLAY) {
+      const k = player.dashCd > 0 ? 1 - player.dashCd / T.dashCd : 1;
+      const rad = r * 1.75, half = 0.36;
+      const mid = -Math.PI / 2 + Math.sin(player.walk) * 0.3 * run;
+      const cy = py - lift;
+      ctx.lineCap = 'round';
+      ctx.lineWidth = Math.max(3, r * 0.2);
+      ctx.strokeStyle = ink(0.13);
+      ctx.beginPath(); ctx.arc(px, cy, rad, mid - half, mid + half); ctx.stroke();
+      if (k >= 1) {
+        ctx.globalAlpha = 0.75 + Math.sin(performance.now() / 180) * 0.25;
+        ctx.strokeStyle = ACCENT;
+        ctx.beginPath(); ctx.arc(px, cy, rad, mid - half, mid + half); ctx.stroke();
+        ctx.globalAlpha = 1;
+      } else {
+        ctx.strokeStyle = ink(0.34);
+        ctx.beginPath(); ctx.arc(px, cy, rad, mid - half, mid - half + 2 * half * k); ctx.stroke();
+      }
+    }
+
+    ctx.save();
+    ctx.translate(px, py - lift);
+    const sq = (air - 0.45) * 0.28 * run + Math.sin(player.walk * 0.8) * 0.015;   // idle breath when still
+    ctx.scale(1 - sq, 1 + sq);
+    ctx.rotate(clamp(player.vx / (T.playerSpeed * S), -1, 1) * 0.2 * run);
+    if (player.dash > 0) {                              // a hard smear along the dash
+      const a = Math.atan2(player.vy, player.vx);
+      ctx.rotate(a); ctx.scale(1.34, 0.76); ctx.rotate(-a);
+    }
+    const g = ctx.createLinearGradient(0, -r, 0, r);
+    g.addColorStop(0, '#fdba74'); g.addColorStop(1, ACCENT);
+    ctx.fillStyle = g; circle(0, 0, r); ctx.fill();
+    ctx.strokeStyle = ACCENT_D; ctx.lineWidth = 2; circle(0, 0, r); ctx.stroke();
+    ctx.fillStyle = 'rgba(255,255,255,0.5)';
+    circle(-r * 0.36, -r * 0.38, r * 0.22); ctx.fill();
+    leaf(r * 0.42, -r * 0.92, r, -0.55);
+    ctx.strokeStyle = '#7c3f10'; ctx.lineWidth = Math.max(1.5, r * 0.12);
+    ctx.beginPath(); ctx.moveTo(0, -r * 0.9); ctx.lineTo(r * 0.1, -r * 1.15); ctx.stroke();
+    face(r, scare > 0.35 ? 'o' : 's');
+    ctx.restore();
+  }
+
+  function drawJoystick() {
+    if (!joy) return;
+    const R = 42 * Math.max(0.9, S);
+    ctx.strokeStyle = ink(0.12); ctx.lineWidth = 2;
+    circle(joy.ox, joy.oy, R); ctx.stroke();
+    const dx = joy.x - joy.ox, dy = joy.y - joy.oy;
+    const m = Math.hypot(dx, dy) || 1, k = Math.min(1, m / R);
+    ctx.fillStyle = ink(0.2);
+    circle(joy.ox + (dx / m) * R * k, joy.oy + (dy / m) * R * k, 15 * Math.max(0.9, S)); ctx.fill();
+  }
+
+  // ---------- arcade type ----------
+  function type(text, x, y, color, size, weight, sp, align) {
+    if ('letterSpacing' in ctx) ctx.letterSpacing = (sp === undefined ? 2 : sp) + 'px';
+    ctx.font = `${weight || 700} ${size}px ui-monospace, monospace`;
+    ctx.fillStyle = color;
+    ctx.textAlign = align || 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(text, x, y);
+    if ('letterSpacing' in ctx) ctx.letterSpacing = '0px';
+  }
+  function hairline(y, w, alpha) {
+    ctx.strokeStyle = ink(alpha); ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(W / 2 - w / 2, y + 0.5); ctx.lineTo(W / 2 + w / 2, y + 0.5); ctx.stroke();
+  }
+  const blink = () => ((performance.now() / 460) | 0) % 2 === 0;
+  function statStrip(items, y) {
+    const gap = Math.min(110, (W - 40) / items.length);
+    items.forEach(([k, v, color], i) => {
+      const x = W / 2 + (i - (items.length - 1) / 2) * gap;
+      type(k, x, y, ink(0.32), 9, 700, 1.5);
+      type(v, x, y + 21, color || ink(0.82), 15, 700, 0);
+      if (i < items.length - 1) {
+        ctx.strokeStyle = ink(0.11); ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.moveTo((x + gap / 2) + 0.5, y - 7); ctx.lineTo((x + gap / 2) + 0.5, y + 29); ctx.stroke();
+      }
+    });
+  }
+  // Plain units rather than a clock face — "47s" is a length of time, "0:47" is a time of day.
+  const fmtTime = (s) => {
+    const t = Math.max(0, Math.floor(s));
+    return t < 60 ? t + 's' : `${(t / 60) | 0}m ${String(t % 60).padStart(2, '0')}s`;
+  };
+
+  function drawHud() {
+    // A snake will happily park itself under the score. A soft white bloom behind the type
+    // keeps it readable without putting a panel on top of the play area.
+    ctx.save();
+    ctx.shadowColor = 'rgba(255,255,255,0.95)'; ctx.shadowBlur = 7;
+    type(String(score), 26, 36, ink(0.92), 28, 800, 0, 'left');
+    type('SCORE', 26, 60, ink(0.34), 9, 700, 1.5, 'left');
+    type(fmtTime(elapsed), W - 26, 36, ink(0.82), 18, 700, 0, 'right');
+    type(kills + ' DOWN', W - 26, 60, ink(0.34), 9, 700, 1.5, 'right');
+    if (chain > 1) {
+      ctx.globalAlpha = 0.45 + clamp(chainT / T.chainWindow, 0, 1) * 0.55;
+      type('CHAIN x' + chain, W / 2, 36, GOLD, 17, 800, 2);
+      ctx.globalAlpha = 1;
+    }
+    // The dash is the only control that isn't obvious from picking the game up, and on touch
+    // there's no button to imply it exists any more — so it says so, quietly, at the bottom.
+    // It brightens the moment the dash is actually available.
+    const ready = player.dashCd <= 0;
+    ctx.globalAlpha = ready ? 0.9 : 0.45;
+    type(IS_TOUCH ? 'TAP WITH A SECOND FINGER TO DASH' : 'SHIFT TO DASH',
+         W / 2, H - 20, ready ? ACCENT_D : ink(0.4), 9, 700, 2);
+    ctx.globalAlpha = 1;
+    ctx.restore();
+  }
+
+  function drawMenu() {
+    // Light enough to read the copy, thin enough that the hunt going on behind it still
+    // reads as a hunt — the title screen is a live match, not a picture of one.
+    ctx.fillStyle = 'rgba(255,255,255,0.7)';
+    ctx.fillRect(0, 0, W, H);
+    const cy = H * 0.28;
+    type('BAIT', W / 2, cy, ink(0.93), Math.min(64, W * 0.15), 800, 10);
+    hairline(cy + 32, 220, 0.14);
+    type('YOU ARE THE FOOD', W / 2, cy + 54, ACCENT_D, 12, 700, 4);
+    type('THEY HUNT YOU · MAKE THEM CRASH', W / 2, cy + 78, ink(0.42), 10, 700, 2);
+    if (blink()) type(IS_TOUCH ? 'TAP TO START' : 'PRESS SPACE TO START', W / 2, cy + 122, ink(0.85), 13, 800, 3);
+    type(IS_TOUCH ? 'DRAG TO MOVE  ·  SECOND FINGER TO DASH' : 'WASD / ARROWS TO MOVE  ·  SHIFT TO DASH',
+         W / 2, cy + 152, ink(0.34), 9, 700, 2);
+    if (best > 0) type('BEST  ' + best, W / 2, cy + 176, ink(0.32), 10, 700, 2);
+  }
+
+  function drawGameOver() {
+    ctx.fillStyle = 'rgba(255,255,255,0.72)';
+    ctx.fillRect(0, 0, W, H);
+    const cy = H * 0.28;
+    const isBest = score >= best && score > 0;
+    ctx.globalAlpha = Math.min(1, (performance.now() - deadAt) / 220);
+    type('EATEN!', W / 2, cy - 44, RED, Math.min(48, W * 0.12), 800, 6);
+    type('THE ' + deathBy + ' SNAKE GOT YOU', W / 2, cy - 8, ink(0.34), 9, 700, 2);
+    hairline(cy + 16, 200, 0.13);
+    // Count up to the final score rather than snapping to it — a beat of tally before the
+    // number settles.
+    const countT = clamp((performance.now() - deadAt) / 1000 / 0.7, 0, 1);
+    type(String(Math.round(score * (1 - Math.pow(1 - countT, 3)))), W / 2, cy + 66, ink(0.93), Math.min(68, W * 0.16), 800, 0);
+    type(isBest ? '★  NEW BEST' : 'FINAL SCORE', W / 2, cy + 112, isBest ? GOLD : ink(0.36), 9, 700, 2);
+    // Two numbers, not five. The score is already the headline; how long you lasted and
+    // whether you beat yourself are the only other things anyone reads.
+    statStrip([['TIME', fmtTime(elapsed)], ['BEST', String(best)]], cy + 158);
+    if (blink()) type(IS_TOUCH ? 'TAP TO PLAY AGAIN' : 'PRESS SPACE', W / 2, cy + 220, ink(0.85), 13, 800, 3);
+    ctx.globalAlpha = 1;
+  }
+
+  function draw() {
+    ctx.save();
+    if (shake > 0) ctx.translate((Math.random() - 0.5) * shake * 14 * S, (Math.random() - 0.5) * shake * 14 * S);
+
+    drawArena();
+    ctx.save();
+    ctx.beginPath(); ctx.rect(0, 0, W, H); ctx.clip();   // seam copies get trimmed at the edge
+    for (const f of fruits) drawFruit(f);
+    for (const s of snakes) drawSnake(s);
+    for (const w of warns) drawWarn(w);
+    drawPlayer();
+    for (const p of parts) {
+      ctx.globalAlpha = Math.max(0, p.life);
+      ctx.fillStyle = p.color;
+      circle(p.x, p.y, p.r * Math.max(0.2, p.life)); ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+    for (const f of floaters) {
+      ctx.globalAlpha = Math.max(0, Math.min(1, f.life));
+      ctx.fillStyle = f.color;
+      ctx.font = `800 ${f.size}px ui-monospace, monospace`;
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(f.text, f.x, f.y);
+    }
+    ctx.globalAlpha = 1;
+    ctx.restore();
+
+    if (state === PLAY) { drawHud(); drawJoystick(); }
+    if (state === MENU) drawMenu();
+    if (state === DEAD) drawGameOver();
+    ctx.restore();
+  }
+
+  // ---------- loop ----------
+  resize();
+  booted = true;
+  resetAttract();
+  let last = performance.now();
+  function frame(now) {
+    const real = Math.min((now - last) / 1000, 0.05);
+    last = now;
+    // Hitstop freezes the world outright for a few frames on a kill; the slow-mo after it is
+    // the deceleration you feel. Both run on real time, so they always end.
+    let dt = real;
+    if (hitstop > 0) { hitstop -= real; dt = 0; }
+    else if (slowT > 0) { slowT -= real; dt = real * 0.42; }
+    update(dt);
+    draw();
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
