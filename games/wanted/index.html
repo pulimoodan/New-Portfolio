@@ -92,6 +92,7 @@
   const ctx = cvs.getContext('2d');
   let W = 0, H = 0, DPR = 1;
   let BASE = 66;               // a person's height in px at mid-depth
+  let NARROW = false;          // phone-width: shorter copy, tighter type, smaller readouts
   let yMin = 0, yMax = 0, xMin = 0, xMax = 0;
   const IS_TOUCH = window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
   const TAU = Math.PI * 2;
@@ -107,6 +108,7 @@
     // the moustache stop being shapes and start being two grey pixels, and the whole game is
     // reading shapes.
     BASE = clamp(Math.min(W, H * 1.4) / 8.5, 50, 88);
+    NARROW = W < 560;
     // No header, no frame, no panel: the crowd owns the entire canvas and the readouts float
     // on top of it. The only reserved strip is the height of one head, so the back row isn't
     // decapitated by the top edge.
@@ -1064,9 +1066,21 @@
   }
 
   // ---------- arcade type ----------
-  function type(text, x, y, color, size, weight, sp, align) {
-    if ('letterSpacing' in ctx) ctx.letterSpacing = (sp === undefined ? 2 : sp) + 'px';
-    ctx.font = `${weight || 700} ${size}px ui-monospace, monospace`;
+  // `maxW` is the whole mobile story. Monospace at a fixed size and a fixed tracking will
+  // happily run off both edges of a 360px phone, so anything that spans the screen says how
+  // much room it has and gets scaled — size AND tracking together, or the letters bunch up
+  // while the gaps stay put.
+  function type(text, x, y, color, size, weight, sp, align, maxW) {
+    weight = weight || 700; sp = sp === undefined ? 2 : sp;
+    const setFont = () => {
+      if ('letterSpacing' in ctx) ctx.letterSpacing = sp + 'px';
+      ctx.font = `${weight} ${size}px ui-monospace, monospace`;
+    };
+    setFont();
+    if (maxW > 0) {
+      const w = ctx.measureText(text).width;
+      if (w > maxW) { const k = maxW / w; size *= k; sp *= k; setFont(); }
+    }
     ctx.fillStyle = color;
     ctx.textAlign = align || 'center';
     ctx.textBaseline = 'middle';
@@ -1103,21 +1117,29 @@
     ctx.save();
     ctx.shadowColor = 'rgba(255,255,255,0.95)'; ctx.shadowBlur = 9;
 
-    type(String(found), W - 26, 36, ink(0.92), 28, 800, 0, 'right');
-    type('FOUND', W - 26, 60, ink(0.34), 9, 700, 1.5, 'right');
-    type('ROUND ' + round, W - 26, 78, ACCENT_D, 9, 700, 1.5, 'right');
+    // The score column and the announcer share the top edge, so the announcer is only ever
+    // given the room the score column isn't using. On a phone that's not enough for a sentence
+    // — hence the short forms below. Squeezing "TARGET IS ABOUT TO LEAVE THE SCREEN" into
+    // 200px would technically fit and be unreadable, which is the same as not drawing it.
+    const pad = NARROW ? 14 : 26;
+    const num = NARROW ? 22 : 28, lab = NARROW ? 8 : 9;
+    type(String(found), W - pad, NARROW ? 28 : 36, ink(0.92), num, 800, 0, 'right');
+    type('FOUND', W - pad, NARROW ? 46 : 60, ink(0.34), lab, 700, 1.5, 'right');
+    type('ROUND ' + round, W - pad, NARROW ? 62 : 78, ACCENT_D, lab, 700, 1.5, 'right');
 
-    // The middle of the top edge is the announcer. It says one thing at a time, and what it
-    // says is always about the target: arriving, running out, gone, caught.
-    const cx = W / 2;
+    const cx = W / 2, side = NARROW ? 76 : 116;
+    const bw = Math.max(120, W - side * 2);      // what's left between the two score columns
+    const big = NARROW ? 11 : 13, small = NARROW ? 8 : 9;
+    const y1 = NARROW ? 28 : 36, y2 = NARROW ? 48 : 60, y3 = NARROW ? 66 : 78;
+
     if (inIntro()) {
-      type('TARGET IS ENTERING THE SCREEN', cx, 36, ACCENT_D, 13, 800, 3);
-      type('CASE ' + caseNo(), cx, 60, ink(0.34), 9, 700, 1.5);
+      type(NARROW ? 'TARGET ENTERING' : 'TARGET IS ENTERING THE SCREEN', cx, y1, ACCENT_D, big, 800, 3, 'center', bw);
+      type('CASE ' + caseNo(), cx, y2, ink(0.34), small, 700, 1.5, 'center', bw);
     } else if (msg && msg.t < msg.dur) {
       const a = Math.min(1, (msg.dur - msg.t) / 0.25);
       ctx.globalAlpha = a;
-      type(msg.text, cx, 36, msg.color, 13, 800, 3);
-      if (msg.sub) type(msg.sub, cx, 60, ink(0.34), 9, 700, 1.5);
+      type(msg.text, cx, y1, msg.color, big, 800, 3, 'center', bw);
+      if (msg.sub) type(msg.sub, cx, y2, ink(0.34), small, 700, 1.5, 'center', bw);
       ctx.globalAlpha = 1;
     } else {
       // No number. The room reddening and the tick underneath it already say how long is left,
@@ -1125,13 +1147,13 @@
       // only place you can afford to be looking.
       if (hot) {
         ctx.globalAlpha = 0.55 + Math.abs(Math.sin(tNow * 5)) * 0.45;
-        type('TARGET IS ABOUT TO LEAVE THE SCREEN', cx, 36, RED, 13, 800, 3);
+        type(NARROW ? 'ABOUT TO LEAVE' : 'TARGET IS ABOUT TO LEAVE THE SCREEN', cx, y1, RED, big, 800, 3, 'center', bw);
         ctx.globalAlpha = 1;
       } else {
-        type('TARGET IS IN THE CROWD', cx, 36, ink(0.4), 10, 700, 2);
+        type(NARROW ? 'IN THE CROWD' : 'TARGET IS IN THE CROWD', cx, y1, ink(0.4), NARROW ? 9 : 10, 700, 2, 'center', bw);
       }
     }
-    if (misses > 0 && !inIntro()) type(misses + ' WRONG', cx, 78, RED, 9, 700, 1.5);
+    if (misses > 0 && !inIntro()) type(misses + ' WRONG', cx, y3, RED, small, 700, 1.5, 'center', bw);
     ctx.restore();
 
     // The photo only exists while there's a case open. On the title and on the scoreboard it
@@ -1191,7 +1213,8 @@
       const h = personH(p);
       burst(p.x, p.y - h * 0.6, [ACCENT, GOOD, GOLD, '#f5c518', '#e91e8c'], 26);
       floater('GOT THEM', p.x, p.y - h - 16, GOOD, 17);
-      say('TARGET IDENTIFIED', GOOD, 'CASE ' + caseNo() + ' CLOSED', 1.2);
+      say(NARROW ? 'IDENTIFIED' : 'TARGET IDENTIFIED', GOOD,
+          NARROW ? 'CASE ' + caseNo() : 'CASE ' + caseNo() + ' CLOSED', 1.2);
       sndFound();
     } else {
       if (p.wrong) return;                    // already crossed off, already paid for
@@ -1200,7 +1223,7 @@
       clock -= cost;
       const h = personH(p);
       floater('−' + cost + 's', p.x, p.y - h - 14, RED, 17);
-      say('NOT YOUR TARGET', RED, '−' + cost + ' SECONDS', 1.1);
+      say(NARROW ? 'NOT THEM' : 'NOT YOUR TARGET', RED, '−' + cost + ' SECONDS', 1.1);
       shake = 1; flash = 1;
       sndMiss();
       if (clock <= 0) { clock = 0; timeUp(); }
@@ -1413,13 +1436,15 @@
   // the blinking call to action, and the best score parked at the bottom edge.
   function drawMenu() {
     ctx.fillStyle = 'rgba(255,255,255,0.74)'; ctx.fillRect(0, 0, W, H);
-    const cy = H * 0.30;
-    type('WANTED', W / 2, cy, ink(0.93), Math.min(64, W * 0.15), 800, 10);
-    hairline(cy + 32, 240, 0.14);
-    type('FIND THE FACE IN THE PHOTO', W / 2, cy + 54, ACCENT_D, 12, 700, 4);
-    type('THEY WALK IN  ·  YOU HAVE UNTIL THEY WALK OUT', W / 2, cy + 76, ink(0.42), 10, 700, 2);
-    if (blinkUI()) type(IS_TOUCH ? 'TAP TO START' : 'PRESS SPACE TO START', W / 2, cy + 122, ink(0.85), 13, 800, 3);
-    if (best > 0) type('BEST  ' + best, W / 2, H - 30, ink(0.3), 10, 700, 2);
+    const cy = H * 0.30, mw = W - 32;
+    type('WANTED', W / 2, cy, ink(0.93), Math.min(64, W * 0.15), 800, 10, 'center', mw);
+    hairline(cy + 32, Math.min(240, mw), 0.14);
+    type('FIND THE FACE IN THE PHOTO', W / 2, cy + 54, ACCENT_D, 12, 700, 4, 'center', mw);
+    type(NARROW ? 'THEY WALK IN  ·  FIND THEM BEFORE THEY WALK OUT'
+               : 'THEY WALK IN  ·  YOU HAVE UNTIL THEY WALK OUT',
+         W / 2, cy + 76, ink(0.42), 10, 700, 2, 'center', mw);
+    if (blinkUI()) type(IS_TOUCH ? 'TAP TO START' : 'PRESS SPACE TO START', W / 2, cy + 122, ink(0.85), 13, 800, 3, 'center', mw);
+    if (best > 0) type('BEST  ' + best, W / 2, H - 30, ink(0.3), 10, 700, 2, 'center', mw);
   }
 
   function drawGameOver() {
@@ -1430,23 +1455,24 @@
       ctx.save();
       ctx.shadowColor = 'rgba(255,255,255,0.95)'; ctx.shadowBlur = 9;
       ctx.globalAlpha = clamp(t / 0.25, 0, 1);
-      type('TARGET LEFT THE SCREEN', W / 2, 36, RED, 13, 800, 3);
+      type(NARROW ? 'TARGET LEFT' : 'TARGET LEFT THE SCREEN', W / 2, NARROW ? 28 : 36, RED,
+           NARROW ? 11 : 13, 800, 3, 'center', W - 32);
       ctx.restore();
     }
     const o = clamp((t - hold) / 0.4, 0, 1);
     if (o <= 0) return;
     ctx.globalAlpha = o;
     ctx.fillStyle = 'rgba(255,255,255,0.76)'; ctx.fillRect(0, 0, W, H);
-    const cy = H * 0.28, isBest = found >= best && found > 0;
-    type('THEY GOT AWAY', W / 2, cy - 44, RED, Math.min(48, W * 0.12), 800, 6);
-    type('THE TARGET LEFT THE SCREEN', W / 2, cy - 8, ink(0.34), 9, 700, 2);
-    hairline(cy + 16, 200, 0.13);
+    const cy = H * 0.28, isBest = found >= best && found > 0, mw = W - 32;
+    type('THEY GOT AWAY', W / 2, cy - 44, RED, Math.min(48, W * 0.12), 800, 6, 'center', mw);
+    type(NARROW ? 'THE TARGET LEFT' : 'THE TARGET LEFT THE SCREEN', W / 2, cy - 8, ink(0.34), 9, 700, 2, 'center', mw);
+    hairline(cy + 16, Math.min(200, mw), 0.13);
     // Count up to the total rather than snapping to it — a beat of tally before it settles.
     const count = clamp((t - hold) / 0.7, 0, 1);
-    type(String(Math.round(found * (1 - Math.pow(1 - count, 3)))), W / 2, cy + 66, ink(0.93), Math.min(68, W * 0.16), 800, 0);
-    type(isBest ? '★  NEW BEST' : 'FACES FOUND', W / 2, cy + 112, isBest ? GOLD : ink(0.36), 9, 700, 2);
+    type(String(Math.round(found * (1 - Math.pow(1 - count, 3)))), W / 2, cy + 66, ink(0.93), Math.min(68, W * 0.16), 800, 0, 'center', mw);
+    type(isBest ? '★  NEW BEST' : 'FACES FOUND', W / 2, cy + 112, isBest ? GOLD : ink(0.36), 9, 700, 2, 'center', mw);
     statStrip([['TIME', fmtTime(elapsed)], ['BEST', String(best)]], cy + 158);
-    if (t > hold + 0.3 && blinkUI()) type(IS_TOUCH ? 'TAP TO PLAY AGAIN' : 'PRESS SPACE', W / 2, cy + 220, ink(0.85), 13, 800, 3);
+    if (t > hold + 0.3 && blinkUI()) type(IS_TOUCH ? 'TAP TO PLAY AGAIN' : 'PRESS SPACE', W / 2, cy + 220, ink(0.85), 13, 800, 3, 'center', mw);
     ctx.globalAlpha = 1;
   }
 
