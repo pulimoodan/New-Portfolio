@@ -30,5 +30,13 @@
     "emoji": "🐍",
     "gradient": "linear-gradient(135deg, #16a34a, #14532d)",
     "line": "A no-weapon arcade game about being the food and baiting snakes into crashing (they still win)."
+  },
+  {
+    "slug": "wanted",
+    "title": "Wanted",
+    "tagline": "one photo · one crowd · one window",
+    "emoji": "🕵️",
+    "gradient": "linear-gradient(135deg, #4f46e5, #312e81)",
+    "line": "A spot-the-face game about a crowd that keeps moving and a target who leaves on time (I lose them by round six)."
   }
 ]
