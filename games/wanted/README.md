@@ -1,0 +1,205 @@
+# WANTED
+
+One photo, one crowd, one window. The person in the photo walks onto the screen, spends about
+twenty seconds in there with a hundred strangers, and then walks off the other side. Click them
+before they do.
+
+Nobody is hidden. Everybody is in plain sight, front-facing, the whole time. The difficulty is
+that four of them are wearing almost exactly what your one is wearing.
+
+## Run it
+
+Open `index.html` in a browser. One file, no build, no dependencies.
+
+Analytics loads from an absolute path, so if you want the events to fire, serve the repo root
+rather than opening the file directly:
+
+```
+python3 -m http.server 4321
+```
+
+## Controls
+
+| | |
+|---|---|
+| click / tap a person | that's your accusation |
+| click / tap the photo | blow it up in the middle of the board; click anywhere to put it back |
+| `F` | same thing, from the keyboard |
+| `M` | mute |
+| space | start / restart |
+
+That's the whole control scheme. There's no slow-motion button, no zoom, no hint — the only
+thing you can spend is time, and the clock doesn't stop while you're looking at the photo.
+
+## The round
+
+1. **They enter.** The photo is held up in the middle of the screen, the board dims, and the
+   target walks in from one side — along with about a third of the crowd, because an entrance
+   only works as camouflage if it isn't the only one.
+2. **The photo flies to the bottom-left corner** and the countdown starts.
+3. **You look.** The crowd mills, arrives and leaves the whole time. The room goes redder from
+   the edges in as the window closes.
+4. **They leave.** Not at the buzzer — the target commits to the exit the moment the walk to
+   the edge would take exactly as long as the clock has left. So the last few seconds of a
+   round are a person visibly heading for the door, at a walking pace, and the countdown is a
+   measurement of them rather than a rule imposed on them.
+
+Miss the window and they're gone. No reveal, no "here's who it was" — that's the cost. The
+scoreboard comes up about half a second later, because they'd already walked out and holding on
+an empty crowd for two seconds just reads as the game hanging.
+
+## There is no timer on screen
+
+There's a countdown, there just isn't a number for it. The room reddens from the edges in as the
+window closes, and a woodblock starts ticking under the last eight seconds and climbs in the last
+four. Both are peripheral on purpose: a number is something you have to look at, and the only
+place you can afford to be looking is the crowd.
+
+## Sound
+
+All synthesised — no audio files, so the game stays one portable HTML file, and more usefully the
+crowd never loops. Two seconds of a real recorded plaza gives itself away in about four.
+
+The room is four layers, none of which is a crowd on its own:
+
+- **rumble** — pink-ish noise under a 380 Hz lowpass, breathing on a 0.09 Hz LFO. The weight of
+  a lot of bodies in a space.
+- **babble** — the same noise through three vowel-band filters (~430 / 880 / 1650 Hz), each
+  swelling at its own unhurried rate and panned apart, so the texture never repeats.
+- **shuffle** — a 1.9 Hz wobble on the rumble. Reads as footfall without being footsteps.
+- **voices** — every second or so, one person somewhere says one thing: a saw through two
+  formants with a little pitch drift, panned at random. This is the layer that makes it a crowd
+  rather than weather. The ear needs individuals before it will believe a mass.
+
+Those four take three inputs, and they're the same three the picture is using: how full the room
+is, whether the photo is up (the room pulls back and narrows — looking at the photo should feel
+like leaning away from the noise), and how far the window has closed (the babble tightens and
+the low end comes up).
+
+Events are all built from two primitives, a pitched `tone()` and a filtered-noise `perc()`, and
+everything runs through one limiter — the ambience never stops, so every event lands on top of
+it and the peaks are additive.
+
+| | |
+|---|---|
+| round start | a paper shuffle and a soft two-note figure — a file opening |
+| photo up / down | the same shuffle, pitched up or down |
+| **found** | a rising triad with a slow attack, plus a short swell of the crowd reacting |
+| **wrong** | a body-weight thud and two flat, unmusical tones. Deliberately not a buzzer: you didn't break a rule, you got a person wrong. |
+| tick | dry woodblock, climbing under four seconds |
+| they leave | a low sweep away from you and one door-thump |
+| game over | a quiet minor chord, arriving under the scoreboard rather than on top of the exit |
+
+The AudioContext sleeps with the tab, and `M` mutes.
+
+## People are thirteen integers
+
+There are no sprites in here. A person is skin, hair style, hair colour, headwear, shirt style,
+shirt colour, second colour, trousers, facial hair, eyewear, an accessory, build, and height —
+thirteen small numbers, drawn as paths in a 100-unit-tall coordinate space and scaled by depth.
+
+Which matters because difficulty is *generated by copying the target and changing n of them*.
+"One detail apart" is a thing the code can construct, rather than a thing I'd have to hand-draw
+sixty times.
+
+| round | closest decoy |
+|---|---|
+| 1–2 | random strangers |
+| 3–5 | three details off |
+| 6–8 | two details off |
+| 9+ | **one detail off**, and there are a dozen of them |
+
+## The fairness rule
+
+The one thing this game must never do is show you two people you cannot tell apart and then
+charge you for guessing.
+
+So every generated person is compared against the target on a *signature*: the list of genes
+that are (a) actually doing visible work given the rest of that person's genes, and (b) not
+currently hidden by the photo. Any collision is regenerated.
+
+The "actually doing visible work" half is the fiddly bit, and it's all in `effective()`:
+
+- a hijab or turban covers the hair, so "different hair" isn't a difference
+- a bald head makes hair colour meaningless
+- a plain tee hides the second colour, so two people whose only disagreement is `alt` are the
+  same person in the same clothes
+- height is excluded entirely — the crowd is drawn in perspective, so a short person at the
+  front is taller on screen than a tall one at the back. Height is real variety but it is not
+  evidence, and the game must never hang an answer on it.
+
+A 120-round audit came back with zero indistinguishable decoys, and the closest decoy tightening
+3 → 2 → 1 exactly on schedule.
+
+## The photo degrades
+
+| from round | what happens | what it hides |
+|---|---|---|
+| 8 | the print goes greyscale | skin tone, hair colour, shirt colour, second colour, trousers |
+| 13 | the bottom is torn off | everything below the hip |
+
+Both feed straight back into decoy generation — a hidden gene stops counting as a difference, so
+the generator is forced to separate the target from the crowd using something you can still see.
+Greyscale at round 8 doesn't make the game unfair, it makes it about silhouette.
+
+## The crowd is a street, not a box
+
+Everyone except the target walks off the sides and is replaced by a fresh stranger coming in the
+other way, so the population holds steady while the faces never stop turning over. Only the
+target is on a leash, bouncing off the edges until it's time to leave.
+
+Yes, that means the one person who never leaves is the one you're looking for. Across a hundred
+people and twenty seconds, good luck.
+
+Other things the crowd does so it reads as a crowd:
+
+- **soft shoulders** — a mild repulsion between anyone standing at the same depth, so the pack
+  keeps shuffling itself open instead of stacking into towers
+- **pauses** — nearly half of all direction changes are somebody stopping to look at something.
+  The pauses matter more than the turns; a crowd where everything moves at once is a conveyor.
+- **depth** — feet position sets both draw order and scale, which is what makes it a plaza
+  rather than a row
+- **the photo is an obstacle** — it sits *on* the board, so anyone who would stand behind it is
+  walked out past its right edge. Otherwise the one person you're looking for can spend a whole
+  round filed under their own mugshot.
+
+## Tuning
+
+Everything lives in the `T` object at the top of the script.
+
+| knob | effect |
+|---|---|
+| `timeBase` / `timeDecay` / `timeMin` | how long the target is on screen, and how fast that shrinks |
+| `crowdBase` / `crowdPer` / `crowdCap` | how big the crowd gets (also capped by screen area) |
+| `twinFrom` | the round the near-twins start showing up |
+| `missBase` / `missStep` | how much a wrong accusation costs, and how fast repeats get dearer |
+| `grayFrom` / `tornFrom` | when the photo starts failing you |
+| `introHold` / `introFly` | the briefing beat before the clock starts |
+| `holdGone` / `holdLeaving` | the beat before the scoreboard, depending on whether they're already out of frame |
+
+Two things learned the hard way:
+
+1. A wrong pick has to cost *escalating* time within a round, or the optimal play is to click
+   everybody. It also has to stay clicked — a crossed-off face you already paid for shouldn't be
+   able to charge you twice.
+2. A target that sprints off at zero looks broken. Give it a planned route instead and re-solve
+   its pace every frame from the distance left and the time left, and the exit lands on the
+   buzzer at a walking speed no matter how the crowd jostled it.
+3. `ctx.ellipse()` does not start a subpath. Call it straight after a `closePath()` and the
+   browser joins the two with a line — which is how the hijab spent an afternoon with a stroke
+   drawn diagonally across its face. `moveTo()` first, always.
+4. Hit testing must key off *what is on screen*, never off a flag the movement code happens to
+   be using. `pickAt` skipped anyone marked `entering` — a flag that stays set until they're
+   8–45% into the frame — so a third of a fresh crowd was fully drawn, fully visible and
+   completely unclickable, and the game felt like it was dropping inputs. The box also has to
+   match the silhouette (arms reach ~0.25 of a body height either side; hats clear the head),
+   with a floor of 13px so distant rows stay tappable. A click into a gap draws a small ripple
+   and costs nothing — without it, "missed everyone" and "input lost" look identical and you
+   start hammering.
+
+## Not built
+
+Faces in the crowd looking back at you. A witness mechanic. Two targets. Somebody in a dinosaur
+costume purely to waste your time.
+
+Anyone want to argue for the dinosaur costume?
