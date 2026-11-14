@@ -38,5 +38,13 @@
     "emoji": "🕵️",
     "gradient": "linear-gradient(135deg, #4f46e5, #312e81)",
     "line": "A spot-the-face game about a crowd that keeps moving and a target who leaves on time (I lose them by round six)."
+  },
+  {
+    "slug": "five",
+    "title": "Five letters",
+    "tagline": "five letters · six tries",
+    "emoji": "🔤",
+    "gradient": "linear-gradient(135deg, #16a34a, #14532d)",
+    "line": "A five-letter word game where every tile lands like a slot machine (I still open with CRANE)."
   }
 ]
