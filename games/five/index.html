@@ -169,6 +169,19 @@
   .key.present { background: var(--gold);  color: var(--outline); box-shadow: inset 0 -5px 0 var(--gold-lip), 0 4px 0 var(--outline); }
   .key.absent  { background: #2c2760; color: #9d97c9; box-shadow: inset 0 -5px 0 #1f1a4a, 0 4px 0 var(--outline); }
   .key.absent::before { opacity: .2; }
+  @media (max-width: 480px) {
+    #keys { gap: 8px; margin: 0 -4px; width: calc(100% + 8px); }
+    .krow { gap: 4px; }
+    .key { max-width: none; height: min(58px, 8dvh); border-width: 2px; border-radius: 9px; font-size: 19px; box-shadow: inset 0 -4px 0 #33298a, 0 3px 0 var(--outline); }
+    .key.wide { max-width: none; }
+    .key.down { transform: translateY(3px); box-shadow: inset 0 -2px 0 #33298a, 0 0 0 var(--outline); }
+    .key.correct { box-shadow: inset 0 -4px 0 var(--green-lip), 0 3px 0 var(--outline); }
+    .key.present { box-shadow: inset 0 -4px 0 var(--gold-lip), 0 3px 0 var(--outline); }
+    .key.absent  { box-shadow: inset 0 -4px 0 #1f1a4a, 0 3px 0 var(--outline); }
+    /* Phone order: Z to M, then delete, then enter on the far right. */
+    .key[data-k="Enter"] { order: 1; }
+    .key.wide { flex: 1.3; }
+  }
   /* "×2" in a revealed tile's corner: you typed this letter once, but the word has it twice.
      Plain outlined text, no box. */
   .face .times {
@@ -388,7 +401,7 @@
     const row = document.createElement('div'); row.className = 'krow';
     for (const ch of line) {
       const b = document.createElement('button'); b.className = 'key';
-      if (ch === '+') { b.textContent = 'ENTER'; b.classList.add('wide'); b.dataset.k = 'Enter'; }
+      if (ch === '+') { b.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19.5 5v5.5a3 3 0 0 1-3 3H5.5" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/><path d="M9.5 8.5l-5 5 5 5" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>'; b.classList.add('wide'); b.dataset.k = 'Enter'; b.setAttribute('aria-label', 'Enter'); }
       else if (ch === '-') { b.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8.5 5h11a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2h-11L2.5 12z" fill="currentColor" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M11 9l6 6M17 9l-6 6" stroke="#4b3fa6" stroke-width="2.6" stroke-linecap="round"/></svg>'; b.classList.add('wide'); b.dataset.k = 'Backspace'; b.setAttribute('aria-label', 'Delete'); }
       else { b.textContent = ch; b.dataset.k = ch; keyEls[ch] = b; }
       row.appendChild(b);
